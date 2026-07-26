@@ -1,0 +1,26 @@
+{
+  "name": "meal-management-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "INSA Meal Management System (IMMS)",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c green,cyan \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "npm run dev --workspace=@imms/meal-api",
+    "dev:web": "npm run dev --workspace=@imms/meal-web",
+    "build": "npm run build --workspace=@imms/meal-api && npm run build --workspace=@imms/meal-web",
+    "db:migrate": "npm run prisma:migrate --workspace=@imms/meal-api",
+    "db:seed": "npm run prisma:seed --workspace=@imms/meal-api",
+    "db:studio": "npm run prisma:studio --workspace=@imms/meal-api",
+    "db:generate": "npm run prisma:generate --workspace=@imms/meal-api",
+    "smoke": "powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

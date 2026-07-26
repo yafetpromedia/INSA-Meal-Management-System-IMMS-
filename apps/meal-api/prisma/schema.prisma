@@ -1,0 +1,636 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Status enums are technical persistence codes only.
+// Display labels, schedules, dictionaries, and business rules live in data.
+// ---------------------------------------------------------------------------
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  LOCKED
+  PENDING_ACTIVATION
+}
+
+enum EntityStatus {
+  ACTIVE
+  DISABLED
+  ARCHIVED
+}
+
+enum ProgramStatus {
+  ACTIVE
+  ARCHIVED
+  CLOSED
+}
+
+enum StudentStatus {
+  ACTIVE
+  INACTIVE
+  GRADUATED
+  WITHDRAWN
+  SUSPENDED
+}
+
+enum MealRecordStatus {
+  SERVED
+  MISSED
+  CANCELLED
+  OVERRIDDEN
+}
+
+enum ImportMode {
+  ADD_ONLY
+  UPDATE_EXISTING
+  REPLACE_EXISTING
+}
+
+enum ImportJobStatus {
+  PENDING
+  VALIDATING
+  PREVIEW
+  COMPLETED
+  FAILED
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  BOOLEAN
+  DATE
+  SELECT
+  MULTI_SELECT
+  JSON
+}
+
+/// Top-level tenant. Every operational entity belongs to an organization.
+model Organization {
+  id          String       @id @default(cuid())
+  code        String       @unique
+  name        String
+  description String?
+  timezone    String       @default("Africa/Addis_Ababa")
+  locale      String       @default("en")
+  branding    Json?
+  status      EntityStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  createdById String?
+  updatedById String?
+
+  campuses              Campus[]
+  academicYears         AcademicYear[]
+  programs              Program[]
+  students              Student[]
+  users                 UserOrganizationAssignment[]
+  roles                 Role[]
+  settings              SystemSetting[]
+  referenceCategories   ReferenceDataCategory[]
+  mealSessionConfigs    MealSessionConfig[]
+  modules               OrganizationModule[]
+  customFieldDefinitions CustomFieldDefinition[]
+  importJobs            ImportJob[]
+  mealRecords           MealRecord[]
+  auditLogs             AuditLog[]
+  businessRules         BusinessRule[]
+}
+
+/// Registry of platform capability modules (meals, dormitory, alumni, â€¦).
+/// Enabling a module for an org does not require schema changes.
+model PlatformModule {
+  id             String   @id @default(cuid())
+  key            String   @unique
+  name           String
+  description    String?
+  isCore         Boolean  @default(false)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  organizations OrganizationModule[]
+}
+
+model OrganizationModule {
+  id             String   @id @default(cuid())
+  organizationId String
+  moduleKey      String
+  isEnabled      Boolean  @default(true)
+  config         Json?
+  enabledAt      DateTime @default(now())
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  module       PlatformModule @relation(fields: [moduleKey], references: [key], onDelete: Cascade)
+
+  @@unique([organizationId, moduleKey])
+  @@index([organizationId])
+}
+
+/// Configurable business rules (lockout threshold, meal uniqueness, etc.).
+/// `scopeKey` is "__platform__" for defaults, or the organizationId for overrides.
+model BusinessRule {
+  id             String   @id @default(cuid())
+  organizationId String?
+  scopeKey       String   @default("__platform__")
+  key            String
+  value          Json
+  description    String?
+  updatedAt      DateTime @updatedAt
+  updatedById    String?
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([scopeKey, key])
+  @@index([key])
+}
+
+/// Org-scoped or platform-default dictionaries (departments, meal codes, â€¦).
+/// `scopeKey` is "__platform__" for shared catalogs, or organizationId for overrides.
+model ReferenceDataCategory {
+  id             String   @id @default(cuid())
+  organizationId String?
+  scopeKey       String   @default("__platform__")
+  key            String
+  name           String
+  description    String?
+  isSystem       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization?      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  items        ReferenceDataItem[]
+
+  @@unique([scopeKey, key])
+}
+
+model ReferenceDataItem {
+  id         String       @id @default(cuid())
+  categoryId String
+  code       String
+  label      String
+  sortOrder  Int          @default(0)
+  metadata   Json?
+  status     EntityStatus @default(ACTIVE)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  category ReferenceDataCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, code])
+  @@index([categoryId])
+}
+
+/// Extend any entity with org-defined fields without altering core tables.
+model CustomFieldDefinition {
+  id             String          @id @default(cuid())
+  organizationId String
+  entityType     String
+  fieldKey       String
+  label          String
+  fieldType      CustomFieldType @default(TEXT)
+  options        Json?
+  isRequired     Boolean         @default(false)
+  isActive       Boolean         @default(true)
+  sortOrder      Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  values       CustomFieldValue[]
+
+  @@unique([organizationId, entityType, fieldKey])
+  @@index([organizationId, entityType])
+}
+
+model CustomFieldValue {
+  id           String   @id @default(cuid())
+  definitionId String
+  entityId     String
+  value        Json
+  updatedAt    DateTime @updatedAt
+
+  definition CustomFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@unique([definitionId, entityId])
+  @@index([entityId])
+}
+
+model AcademicYear {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  startDate      DateTime?
+  endDate        DateTime?
+  /// Open for operations (Part 4: Active)
+  isActive       Boolean   @default(true)
+  /// Working year for the organization
+  isCurrent      Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  programs     Program[]
+  students     Student[]
+  mealRecords  MealRecord[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model Campus {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  shortName      String
+  address        String?
+  city           String?
+  /// Legacy/free-form location text (optional)
+  location       String?
+  logoUrl        String?
+  description    String?
+  status         EntityStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  createdById    String?
+  updatedById    String?
+
+  organization       Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  programs           Program[]
+  students           Student[]
+  userAssignments    UserCampusAssignment[]
+  mealRecords        MealRecord[]
+  mealSessionConfigs MealSessionConfig[]
+  importJobs         ImportJob[]
+
+  @@unique([organizationId, shortName])
+  @@index([organizationId])
+}
+
+model Program {
+  id             String        @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  capacity       Int?
+  status         ProgramStatus @default(ACTIVE)
+  startDate      DateTime?
+  endDate        DateTime?
+  campusId       String
+  academicYearId String
+  coordinatorId  String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  createdById    String?
+  updatedById    String?
+
+  organization      Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campus            Campus                  @relation(fields: [campusId], references: [id])
+  academicYear      AcademicYear            @relation(fields: [academicYearId], references: [id])
+  coordinator       User?                   @relation("ProgramCoordinator", fields: [coordinatorId], references: [id])
+  students          Student[]
+  userAssignments   UserProgramAssignment[]
+  mealRecords       MealRecord[]
+
+  @@unique([campusId, name, academicYearId])
+  @@index([organizationId])
+  @@index([campusId])
+  @@index([academicYearId])
+}
+
+model User {
+  id                  String        @id @default(cuid())
+  email               String        @unique
+  passwordHash        String
+  fullName            String
+  phone               String?
+  status              AccountStatus @default(PENDING_ACTIVATION)
+  failedLoginAttempts Int           @default(0)
+  lockedUntil         DateTime?
+  lastLoginAt         DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  organizationAssignments UserOrganizationAssignment[]
+  roles                   UserRole[]
+  campusAssignments       UserCampusAssignment[]
+  programAssignments      UserProgramAssignment[]
+  sessions                Session[]
+  passwordResetTokens     PasswordResetToken[]
+  coordinatedPrograms     Program[]                    @relation("ProgramCoordinator")
+  mealRecordsAsMentor     MealRecord[]                 @relation("MealMentor")
+  importJobs              ImportJob[]
+  auditLogs               AuditLog[]
+  approvalsGiven          ApprovalRecord[]             @relation("ApprovalApprover")
+}
+
+model UserOrganizationAssignment {
+  userId         String
+  organizationId String
+  isDefault      Boolean  @default(false)
+  assignedAt     DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@id([userId, organizationId])
+  @@index([organizationId])
+}
+
+/// System roles: scopeKey = "__platform__". Custom roles: scopeKey = organizationId.
+model Role {
+  id             String   @id @default(cuid())
+  organizationId String?
+  scopeKey       String   @default("__platform__")
+  name           String
+  displayName    String
+  description    String?
+  isSystem       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization?    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  permissions  RolePermission[]
+  users        UserRole[]
+
+  @@unique([scopeKey, name])
+  @@index([organizationId])
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  module      String
+  action      String
+  description String?
+  createdAt   DateTime @default(now())
+
+  roles RolePermission[]
+
+  @@index([module])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model UserRole {
+  userId         String
+  roleId         String
+  organizationId String?
+  startsAt       DateTime?
+  endsAt         DateTime?
+  assignedAt     DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([organizationId])
+}
+
+model UserCampusAssignment {
+  userId     String
+  campusId   String
+  assignedAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campus Campus @relation(fields: [campusId], references: [id], onDelete: Cascade)
+
+  @@id([userId, campusId])
+}
+
+model UserProgramAssignment {
+  userId     String
+  programId  String
+  assignedAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@id([userId, programId])
+}
+
+model Student {
+  id               String        @id @default(cuid())
+  organizationId   String
+  /// External ID issued by the organization (also used as barcode by default).
+  studentId        String
+  barcode          String
+  fullName         String
+  gender           String?
+  department       String?
+  educationLevel   String?
+  email            String?
+  phone            String?
+  emergencyContact String?
+  photoUrl         String?
+  status           StudentStatus @default(ACTIVE)
+  campusId         String
+  programId        String
+  academicYearId   String
+  metadata         Json?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  createdById      String?
+  updatedById      String?
+  deletedById      String?
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campus            Campus             @relation(fields: [campusId], references: [id])
+  program           Program            @relation(fields: [programId], references: [id])
+  academicYear      AcademicYear       @relation(fields: [academicYearId], references: [id])
+  mealRecords       MealRecord[]
+
+  @@unique([organizationId, studentId])
+  @@unique([organizationId, barcode])
+  @@index([organizationId])
+  @@index([campusId])
+  @@index([programId])
+  @@index([barcode])
+  @@index([fullName])
+}
+
+/// Meal session windows are fully configurable per org (and optionally campus).
+/// `code` is a stable key (e.g. BREAKFAST); label/times come from data.
+/// `scopeKey` is "__org__" for org-wide defaults, or the campusId for overrides.
+model MealSessionConfig {
+  id             String   @id @default(cuid())
+  organizationId String
+  campusId       String?
+  scopeKey       String   @default("__org__")
+  code           String
+  name           String
+  startTime      String
+  endTime        String
+  gracePeriod    Int      @default(0)
+  sortOrder      Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campus       Campus?      @relation(fields: [campusId], references: [id])
+
+  @@unique([organizationId, scopeKey, code])
+  @@index([organizationId, code])
+}
+
+model MealRecord {
+  id             String           @id @default(cuid())
+  organizationId String
+  studentId      String
+  campusId       String
+  programId      String
+  academicYearId String
+  week           Int?
+  day            String?
+  mealDate       DateTime         @db.Date
+  /// Matches MealSessionConfig.code for the organization.
+  mealCode       String
+  servedAt       DateTime         @default(now())
+  mentorId       String?
+  scannerDevice  String?
+  location       String?
+  status         MealRecordStatus @default(SERVED)
+  notes          String?
+  overrideReason String?
+  approvedById   String?
+  approvedAt     DateTime?
+  createdById    String?
+  updatedById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  student      Student      @relation(fields: [studentId], references: [id])
+  campus       Campus       @relation(fields: [campusId], references: [id])
+  program      Program      @relation(fields: [programId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  mentor       User?        @relation("MealMentor", fields: [mentorId], references: [id])
+
+  @@unique([studentId, mealDate, mealCode])
+  @@index([organizationId, mealDate])
+  @@index([campusId, mealDate])
+  @@index([mealCode, mealDate])
+}
+
+model ImportJob {
+  id             String          @id @default(cuid())
+  organizationId String
+  uploadedById   String
+  campusId       String?
+  originalFile   String
+  mode           ImportMode      @default(ADD_ONLY)
+  status         ImportJobStatus @default(PENDING)
+  rowsImported   Int             @default(0)
+  rowsFailed     Int             @default(0)
+  durationMs     Int?
+  errorReportUrl String?
+  createdAt      DateTime        @default(now())
+  completedAt    DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploadedBy   User         @relation(fields: [uploadedById], references: [id])
+  campus       Campus?      @relation(fields: [campusId], references: [id])
+
+  @@index([organizationId])
+}
+
+model Session {
+  id               String    @id @default(cuid())
+  userId           String
+  refreshTokenHash String
+  ipAddress        String?
+  userAgent        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  lastSeenAt       DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([refreshTokenHash])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  timestamp      DateTime @default(now())
+  organizationId String?
+  userId         String?
+  roleName       String?
+  action         String
+  resource       String?
+  resourceId     String?
+  previousValue  Json?
+  newValue       Json?
+  campusId       String?
+  programId      String?
+  ipAddress      String?
+  userAgent      String?
+
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  user         User?         @relation(fields: [userId], references: [id])
+
+  @@index([timestamp])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([action])
+  @@index([campusId])
+}
+
+model ApprovalRecord {
+  id            String   @id @default(cuid())
+  resourceType  String
+  resourceId    String
+  action        String
+  reason        String
+  previousValue Json?
+  newValue      Json?
+  approverId    String
+  approvedAt    DateTime @default(now())
+
+  approver User @relation("ApprovalApprover", fields: [approverId], references: [id])
+
+  @@index([resourceType, resourceId])
+}
+
+/// Platform defaults: scopeKey = "__platform__". Org overrides: scopeKey = organizationId.
+model SystemSetting {
+  id             String   @id @default(cuid())
+  organizationId String?
+  scopeKey       String   @default("__platform__")
+  key            String
+  value          Json
+  updatedAt      DateTime @updatedAt
+  updatedById    String?
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([scopeKey, key])
+  @@index([key])
+}
+
