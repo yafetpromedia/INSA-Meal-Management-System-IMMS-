@@ -19,7 +19,13 @@ Centralized multi-tenant **meal management** for training programs across multip
 - [Functional requirements](docs/srs/02-functional-requirements.md)
 - [RBAC](docs/srs/03-rbac.md)
 - [System architecture & domain model](docs/srs/04-system-architecture-and-domain-model.md)
+- [Database design & entity relationships](docs/srs/05-database-design-and-entity-relationships.md)
+- [REST API specification](docs/srs/06-rest-api-specification.md)
+- [Frontend architecture & UI/UX](docs/srs/07-frontend-architecture-and-ui-ux.md)
 - [Multi-tenancy](docs/architecture/multi-tenancy.md)
+- [Database architecture](docs/architecture/database.md)
+- [REST API architecture](docs/architecture/api.md)
+- [Frontend architecture](docs/architecture/frontend.md)
 
 ## Modules
 
@@ -37,7 +43,8 @@ npm run db:seed
 npm run dev
 ```
 
-- API: http://localhost:4000/api
+- API: http://localhost:4000/api/v1
+- Swagger: http://localhost:4000/api/docs
 - Web: http://localhost:3000
 - Default Super Admin: `superadmin@insa.gov.et` / `ChangeMe!123`
 

@@ -19,6 +19,7 @@ export class CampusesService {
   async list(user: AuthUser, search?: string, organizationId?: string) {
     const orgId = resolveActiveOrganizationId(user, organizationId);
     const where = {
+      deletedAt: null,
       ...scopeOrganizationFilter(user),
       ...(orgId ? { organizationId: orgId } : {}),
       ...(user.isSuperAdmin ? {} : { id: { in: user.campusIds } }),
@@ -73,9 +74,7 @@ export class CampusesService {
         shortName: data.shortName,
         address: data.address,
         city: data.city,
-        location:
-          data.location ??
-          ([data.address, data.city].filter(Boolean).join(', ') || undefined),
+        location: data.location,
         description: data.description,
         createdById: user.id,
       },
@@ -108,7 +107,14 @@ export class CampusesService {
     await this.get(user, id);
     const campus = await this.prisma.campus.update({
       where: { id },
-      data: { ...data, updatedById: user.id },
+      data: {
+        ...data,
+        // City/address are the source of truth; clear duplicated freeform location unless set explicitly
+        ...(data.location === undefined && (data.city !== undefined || data.address !== undefined)
+          ? { location: null }
+          : {}),
+        updatedById: user.id,
+      },
     });
     await this.audit.log({
       userId: user.id,
@@ -129,11 +135,23 @@ export class CampusesService {
 
   async remove(user: AuthUser, id: string) {
     const campus = await this.get(user, id);
-    const dependents = await this.prisma.student.count({ where: { campusId: id } });
-    if (dependents > 0) {
-      throw new BadRequestException('Cannot delete campus with dependent records');
+    if (campus.deletedAt) {
+      throw new BadRequestException('Campus already deleted');
     }
-    await this.prisma.campus.delete({ where: { id } });
+    const activeStudents = await this.prisma.student.count({
+      where: { campusId: id, deletedAt: null },
+    });
+    if (activeStudents > 0) {
+      throw new BadRequestException('Cannot delete campus with active students');
+    }
+    await this.prisma.campus.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        status: EntityStatus.DISABLED,
+        updatedById: user.id,
+      },
+    });
     await this.audit.log({
       userId: user.id,
       action: 'Campus.Delete',

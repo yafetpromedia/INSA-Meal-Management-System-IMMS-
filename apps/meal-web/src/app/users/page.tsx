@@ -1,11 +1,5 @@
-import { ModuleStub } from '@/components/ModuleStub';
+import { redirect } from 'next/navigation';
 
-export default function UsersPage() {
-  return (
-    <ModuleStub
-      title="Mentors & Food Staff"
-      description="User roles for meal distribution: mentors, food staff, admins."
-      endpoint="/users"
-    />
-  );
+export default function UsersRedirectPage() {
+  redirect('/mentors');
 }

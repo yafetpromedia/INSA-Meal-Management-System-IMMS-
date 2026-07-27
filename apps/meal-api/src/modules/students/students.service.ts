@@ -26,12 +26,30 @@ export class StudentsService {
       campusId?: string;
       programId?: string;
       department?: string;
+      status?: StudentStatus;
+      sort?: string;
+      order?: 'asc' | 'desc';
       skip?: number;
       take?: number;
+      page?: number;
+      limit?: number;
     },
   ) {
     const orgId = resolveActiveOrganizationId(user, query.organizationId);
+    const skip = query.skip ?? 0;
+    const take = Math.min(query.take ?? query.limit ?? 20, 200);
+    const page = query.page ?? Math.floor(skip / take) + 1;
+    const order = query.order === 'desc' ? 'desc' : 'asc';
+    const sortField =
+      query.sort === 'studentId' ||
+      query.sort === 'fullName' ||
+      query.sort === 'department' ||
+      query.sort === 'barcode'
+        ? query.sort
+        : 'fullName';
+
     const where = {
+      deletedAt: null,
       ...scopeOrganizationFilter(user),
       ...scopeCampusFilter(user),
       ...scopeProgramFilter(user),
@@ -39,12 +57,14 @@ export class StudentsService {
       ...(query.campusId ? { campusId: query.campusId } : {}),
       ...(query.programId ? { programId: query.programId } : {}),
       ...(query.department ? { department: query.department } : {}),
+      ...(query.status ? { status: query.status } : {}),
       ...(query.search
         ? {
             OR: [
               { studentId: { contains: query.search, mode: 'insensitive' as const } },
               { barcode: { contains: query.search, mode: 'insensitive' as const } },
               { fullName: { contains: query.search, mode: 'insensitive' as const } },
+              { department: { contains: query.search, mode: 'insensitive' as const } },
             ],
           }
         : {}),
@@ -54,13 +74,70 @@ export class StudentsService {
       this.prisma.student.findMany({
         where,
         include: { campus: true, program: true, organization: true },
-        orderBy: { fullName: 'asc' },
-        skip: query.skip ?? 0,
-        take: Math.min(query.take ?? 50, 200),
+        orderBy: { [sortField]: order },
+        skip,
+        take,
       }),
       this.prisma.student.count({ where }),
     ]);
-    return { items, total };
+    return { items, total, page, limit: take };
+  }
+
+  search(
+    user: AuthUser,
+    q: string,
+    organizationId?: string,
+    page?: number,
+    limit?: number,
+  ) {
+    return this.list(user, {
+      search: q,
+      organizationId,
+      page,
+      limit,
+      skip: page && limit ? (page - 1) * limit : 0,
+      take: limit,
+    });
+  }
+
+  async getById(user: AuthUser, id: string) {
+    const student = await this.prisma.student.findFirst({
+      where: { id, deletedAt: null },
+      include: { campus: true, program: true, academicYear: true, organization: true },
+    });
+    if (!student) throw new NotFoundException('Student not found');
+    if (!assertOrgAccess(user, student.organizationId)) {
+      throw new NotFoundException('Student not found');
+    }
+    if (!user.isSuperAdmin && !user.campusIds.includes(student.campusId)) {
+      throw new NotFoundException('Student not found');
+    }
+    return student;
+  }
+
+  async archive(user: AuthUser, id: string) {
+    const existing = await this.getById(user, id);
+    const student = await this.prisma.student.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        status: StudentStatus.INACTIVE,
+        deletedById: user.id,
+        updatedById: user.id,
+      },
+    });
+    await this.audit.log({
+      userId: user.id,
+      action: 'Student.Delete',
+      resource: 'Student',
+      resourceId: id,
+      organizationId: existing.organizationId,
+      campusId: existing.campusId,
+      programId: existing.programId,
+      previousValue: existing,
+      newValue: student,
+    });
+    return { success: true };
   }
 
   async getByBarcode(user: AuthUser, barcode: string, organizationId?: string) {
@@ -68,6 +145,7 @@ export class StudentsService {
     const student = await this.prisma.student.findFirst({
       where: {
         barcode,
+        deletedAt: null,
         ...(orgId ? { organizationId: orgId } : {}),
         ...scopeOrganizationFilter(user),
       },
@@ -144,9 +222,17 @@ export class StudentsService {
   async update(
     user: AuthUser,
     id: string,
-    data: Partial<{ fullName: string; department: string; status: StudentStatus }>,
+    data: Partial<{
+      fullName: string;
+      department: string;
+      gender: string;
+      educationLevel: string;
+      email: string;
+      phone: string;
+      status: StudentStatus;
+    }>,
   ) {
-    const existing = await this.prisma.student.findUnique({ where: { id } });
+    const existing = await this.prisma.student.findFirst({ where: { id, deletedAt: null } });
     if (!existing) throw new NotFoundException('Student not found');
     if (!assertOrgAccess(user, existing.organizationId)) {
       throw new NotFoundException('Student not found');

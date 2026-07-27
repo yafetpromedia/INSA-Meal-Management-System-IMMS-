@@ -1,6 +1,12 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { MealRecordStatus, StudentStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  ethiopiaCalendarDate,
+  ethiopiaDayStartUtc,
+  ethiopiaMinutesNow,
+  ethiopiaWeekday,
+} from '../../common/timezone';
 import { AuditService } from '../audit/audit.service';
 import {
   AuthUser,
@@ -21,16 +27,70 @@ export class MealsService {
   async listConfigs(organizationId: string, campusId?: string) {
     const campusConfigs = campusId
       ? await this.prisma.mealSessionConfig.findMany({
-          where: { organizationId, scopeKey: campusId, isActive: true },
+          where: { organizationId, scopeKey: campusId, isActive: true, deletedAt: null },
           orderBy: { sortOrder: 'asc' },
         })
       : [];
     if (campusConfigs.length) return campusConfigs;
 
     return this.prisma.mealSessionConfig.findMany({
-      where: { organizationId, scopeKey: ORG_SCOPE, isActive: true },
+      where: { organizationId, scopeKey: ORG_SCOPE, isActive: true, deletedAt: null },
       orderBy: { sortOrder: 'asc' },
     });
+  }
+
+  async updateSessionById(
+    user: AuthUser,
+    id: string,
+    data: Partial<{
+      name: string;
+      startTime: string;
+      endTime: string;
+      gracePeriod: number;
+      isActive: boolean;
+      sortOrder: number;
+    }>,
+  ) {
+    const existing = await this.prisma.mealSessionConfig.findUnique({ where: { id } });
+    if (!existing || existing.deletedAt) {
+      throw new NotFoundException('Meal session not found');
+    }
+    const session = await this.prisma.mealSessionConfig.update({
+      where: { id },
+      data,
+    });
+    await this.audit.log({
+      userId: user.id,
+      action: 'Meal.SessionUpdate',
+      resource: 'MealSessionConfig',
+      resourceId: id,
+      organizationId: existing.organizationId,
+      campusId: existing.campusId ?? undefined,
+      previousValue: existing,
+      newValue: session,
+    });
+    return session;
+  }
+
+  async softDeleteSession(user: AuthUser, id: string) {
+    const existing = await this.prisma.mealSessionConfig.findUnique({ where: { id } });
+    if (!existing || existing.deletedAt) {
+      throw new NotFoundException('Meal session not found');
+    }
+    await this.prisma.mealSessionConfig.update({
+      where: { id },
+      data: { deletedAt: new Date(), isActive: false },
+    });
+    await this.audit.log({
+      userId: user.id,
+      action: 'Meal.SessionDelete',
+      resource: 'MealSessionConfig',
+      resourceId: id,
+      organizationId: existing.organizationId,
+      campusId: existing.campusId ?? undefined,
+      previousValue: existing,
+    });
+    return { success: true };
   }
 
   async upsertSession(
@@ -76,6 +136,7 @@ export class MealsService {
         sortOrder: data.sortOrder,
         isActive: data.isActive ?? true,
         campusId: data.campusId,
+        deletedAt: null,
       },
     });
 
@@ -94,8 +155,7 @@ export class MealsService {
 
   async currentMeal(organizationId: string, campusId?: string): Promise<string | null> {
     const configs = await this.listConfigs(organizationId, campusId);
-    const now = new Date();
-    const minutes = now.getHours() * 60 + now.getMinutes();
+    const minutes = ethiopiaMinutesNow();
 
     for (const config of configs) {
       if (this.isWithinWindow(minutes, config.startTime, config.endTime, config.gracePeriod)) {
@@ -105,25 +165,23 @@ export class MealsService {
     return null;
   }
 
-  async verifyAndServe(
+  private async resolveStudentForMeal(
     user: AuthUser,
-    input: {
-      barcode: string;
-      organizationId?: string;
-      override?: boolean;
-      overrideReason?: string;
-      scannerDevice?: string;
-      location?: string;
-    },
+    input: { barcode?: string; studentId?: string; organizationId?: string },
   ) {
     const orgId = resolveActiveOrganizationId(user, input.organizationId);
     if (!orgId && !user.isSuperAdmin) {
       throw new BadRequestException('Organization context required');
     }
+    if (!input.barcode && !input.studentId) {
+      throw new BadRequestException('barcode or studentId is required');
+    }
 
     const student = await this.prisma.student.findFirst({
       where: {
-        barcode: input.barcode,
+        deletedAt: null,
+        ...(input.barcode ? { barcode: input.barcode } : {}),
+        ...(input.studentId ? { id: input.studentId } : {}),
         ...(orgId ? { organizationId: orgId } : {}),
         ...scopeOrganizationFilter(user),
       },
@@ -133,20 +191,113 @@ export class MealsService {
     if (!user.isSuperAdmin && !user.campusIds.includes(student.campusId)) {
       throw new NotFoundException('Student Not Found');
     }
+    return student;
+  }
+
+  async verifyEligibility(
+    user: AuthUser,
+    input: { barcode?: string; studentId?: string; organizationId?: string },
+  ) {
+    const student = await this.resolveStudentForMeal(user, input);
     if (student.status !== StudentStatus.ACTIVE) {
-      throw new BadRequestException('Student inactive');
+      return {
+        eligible: false,
+        reason: 'Student inactive',
+        student,
+        mealSession: null,
+      };
     }
 
     const mealCode = await this.currentMeal(student.organizationId, student.campusId);
     if (!mealCode) {
+      return {
+        eligible: false,
+        reason: 'Meal session closed',
+        student,
+        mealSession: null,
+      };
+    }
+
+    const mealDate = ethiopiaCalendarDate();
+    const existing = await this.prisma.mealRecord.findUnique({
+      where: {
+        studentId_mealDate_mealCode: {
+          studentId: student.id,
+          mealDate,
+          mealCode,
+        },
+      },
+    });
+
+    const session = await this.prisma.mealSessionConfig.findFirst({
+      where: {
+        organizationId: student.organizationId,
+        code: mealCode,
+        deletedAt: null,
+        isActive: true,
+      },
+    });
+
+    if (existing) {
+      return {
+        eligible: false,
+        reason: 'Duplicate meal detected',
+        student,
+        mealSession: session?.name ?? mealCode,
+        mealCode,
+      };
+    }
+
+    return {
+      eligible: true,
+      student,
+      mealSession: session?.name ?? mealCode,
+      mealCode,
+    };
+  }
+
+  async verifyAndServe(
+    user: AuthUser,
+    input: {
+      barcode?: string;
+      studentId?: string;
+      mealCode?: string;
+      mealSessionId?: string;
+      organizationId?: string;
+      override?: boolean;
+      overrideReason?: string;
+      scannerDevice?: string;
+      location?: string;
+    },
+  ) {
+    const student = await this.resolveStudentForMeal(user, input);
+    if (student.status !== StudentStatus.ACTIVE) {
+      throw new BadRequestException('Student inactive');
+    }
+
+    let mealCode =
+      input.mealCode?.toUpperCase() ??
+      (await this.currentMeal(student.organizationId, student.campusId));
+
+    if (input.mealSessionId) {
+      const session = await this.prisma.mealSessionConfig.findFirst({
+        where: {
+          id: input.mealSessionId,
+          organizationId: student.organizationId,
+          deletedAt: null,
+        },
+      });
+      if (!session) throw new BadRequestException('Meal session not found');
+      mealCode = session.code;
+    }
+
+    if (!mealCode) {
       throw new BadRequestException('Meal session closed');
     }
 
-    const now = new Date();
-    const mealDate = new Date(now);
-    mealDate.setHours(0, 0, 0, 0);
-    const week = this.isoWeekNumber(now);
-    const day = now.toLocaleDateString('en-US', { weekday: 'long' });
+    const mealDate = ethiopiaCalendarDate();
+    const weekNumber = this.isoWeekNumber(mealDate);
+    const dayOfWeek = ethiopiaWeekday();
 
     const existing = await this.prisma.mealRecord.findUnique({
       where: {
@@ -179,8 +330,8 @@ export class MealsService {
           approvedAt: new Date(),
           mentorId: user.id,
           notes: input.overrideReason,
-          week,
-          day,
+          weekNumber,
+          dayOfWeek,
         },
       });
       await this.audit.log({
@@ -207,8 +358,8 @@ export class MealsService {
           academicYearId: student.academicYearId,
           mealDate,
           mealCode,
-          week,
-          day,
+          weekNumber,
+          dayOfWeek,
           mentorId: user.id,
           scannerDevice: input.scannerDevice,
           location: input.location,
@@ -252,9 +403,14 @@ export class MealsService {
       mealCode?: string;
       skip?: number;
       take?: number;
+      page?: number;
+      limit?: number;
     },
   ) {
     const orgId = resolveActiveOrganizationId(user, query.organizationId);
+    const skip = query.skip ?? 0;
+    const take = Math.min(query.take ?? query.limit ?? 20, 200);
+    const page = query.page ?? Math.floor(skip / take) + 1;
     const where = {
       ...scopeOrganizationFilter(user),
       ...scopeCampusFilter(user),
@@ -273,17 +429,16 @@ export class MealsService {
           mentor: { select: { id: true, fullName: true } },
         },
         orderBy: { servedAt: 'desc' },
-        skip: query.skip ?? 0,
-        take: Math.min(query.take ?? 50, 200),
+        skip,
+        take,
       }),
       this.prisma.mealRecord.count({ where }),
     ]);
-    return { items, total };
+    return { items, total, page, limit: take };
   }
 
   async todayStats(user: AuthUser, organizationId?: string) {
-    const mealDate = new Date();
-    mealDate.setHours(0, 0, 0, 0);
+    const mealDate = ethiopiaCalendarDate();
     const orgId = resolveActiveOrganizationId(user, organizationId);
     const where = {
       mealDate,
@@ -303,7 +458,7 @@ export class MealsService {
     const duplicates = await this.prisma.auditLog.count({
       where: {
         action: 'Meal.DuplicatePrevented',
-        timestamp: { gte: mealDate },
+        timestamp: { gte: ethiopiaDayStartUtc() },
         ...scopeOrganizationFilter(user),
         ...scopeCampusFilter(user),
       },
@@ -320,7 +475,7 @@ export class MealsService {
   }
 
   private isoWeekNumber(date: Date): number {
-    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
     const dayNum = d.getUTCDay() || 7;
     d.setUTCDate(d.getUTCDate() + 4 - dayNum);
     const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));

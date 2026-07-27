@@ -16,8 +16,9 @@ export class UsersService {
   list(user: AuthUser) {
     return this.prisma.user.findMany({
       where: user.isSuperAdmin
-        ? undefined
+        ? { deletedAt: null }
         : {
+            deletedAt: null,
             organizationAssignments: {
               some: { organizationId: { in: user.organizationIds } },
             },
@@ -160,5 +161,54 @@ export class UsersService {
       throw new ForbiddenException('Cannot modify Super Admin');
     }
     return this.prisma.user.update({ where: { id: userId }, data: { status } });
+  }
+
+  async updateProfile(
+    actor: AuthUser,
+    userId: string,
+    data: Partial<{ fullName: string; phone: string }>,
+  ) {
+    const target = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      include: { roles: { include: { role: true } } },
+    });
+    if (!target) throw new NotFoundException('User not found');
+    if (target.roles.some((r) => r.role.name === 'SuperAdmin') && !actor.isSuperAdmin) {
+      throw new ForbiddenException('Cannot modify Super Admin');
+    }
+    return this.prisma.user.update({
+      where: { id: userId },
+      data,
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        status: true,
+      },
+    });
+  }
+
+  async softDelete(actor: AuthUser, userId: string) {
+    const target = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      include: { roles: { include: { role: true } } },
+    });
+    if (!target) throw new NotFoundException('User not found');
+    if (target.roles.some((r) => r.role.name === 'SuperAdmin') && !actor.isSuperAdmin) {
+      throw new ForbiddenException('Cannot delete Super Admin');
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { deletedAt: new Date(), status: AccountStatus.INACTIVE },
+    });
+    await this.audit.log({
+      userId: actor.id,
+      action: 'User.Delete',
+      resource: 'User',
+      resourceId: userId,
+      previousValue: { email: target.email },
+    });
+    return { success: true };
   }
 }

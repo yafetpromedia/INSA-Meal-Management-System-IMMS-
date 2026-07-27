@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Put, Query } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { IsObject, IsOptional, IsString } from 'class-validator';
+import { Allow, IsOptional, IsString } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { AuthUser } from '../auth/auth.types';
@@ -8,7 +8,9 @@ import { SettingsService } from './settings.service';
 
 class UpsertSettingDto {
   @IsString() key!: string;
-  @IsObject() value!: Record<string, string | number | boolean | null>;
+  /** JSON scalar or object (string, number, boolean, object, array). */
+  @Allow()
+  value!: Prisma.InputJsonValue;
   @IsOptional() @IsString() organizationId?: string;
 }
 

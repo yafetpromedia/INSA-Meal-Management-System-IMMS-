@@ -103,7 +103,7 @@ model Organization {
   businessRules         BusinessRule[]
 }
 
-/// Registry of platform capability modules (meals, dormitory, alumni, â€¦).
+/// Registry of platform capability modules (meals, reports, ...).
 /// Enabling a module for an org does not require schema changes.
 model PlatformModule {
   id             String   @id @default(cuid())
@@ -150,7 +150,7 @@ model BusinessRule {
   @@index([key])
 }
 
-/// Org-scoped or platform-default dictionaries (departments, meal codes, â€¦).
+/// Org-scoped or platform-default dictionaries (departments, meal codes, ...).
 /// `scopeKey` is "__platform__" for shared catalogs, or organizationId for overrides.
 model ReferenceDataCategory {
   id             String   @id @default(cuid())
@@ -231,6 +231,7 @@ model AcademicYear {
   isActive       Boolean   @default(true)
   /// Working year for the organization
   isCurrent      Boolean   @default(false)
+  deletedAt      DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -241,6 +242,7 @@ model AcademicYear {
 
   @@unique([organizationId, name])
   @@index([organizationId])
+  @@index([deletedAt])
 }
 
 model Campus {
@@ -255,6 +257,7 @@ model Campus {
   logoUrl        String?
   description    String?
   status         EntityStatus @default(ACTIVE)
+  deletedAt      DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   createdById    String?
@@ -270,6 +273,7 @@ model Campus {
 
   @@unique([organizationId, shortName])
   @@index([organizationId])
+  @@index([deletedAt])
 }
 
 model Program {
@@ -284,6 +288,7 @@ model Program {
   campusId       String
   academicYearId String
   coordinatorId  String?
+  deletedAt      DateTime?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   createdById    String?
@@ -301,6 +306,7 @@ model Program {
   @@index([organizationId])
   @@index([campusId])
   @@index([academicYearId])
+  @@index([deletedAt])
 }
 
 model User {
@@ -313,6 +319,7 @@ model User {
   failedLoginAttempts Int           @default(0)
   lockedUntil         DateTime?
   lastLoginAt         DateTime?
+  deletedAt           DateTime?
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
@@ -441,6 +448,7 @@ model Student {
   programId        String
   academicYearId   String
   metadata         Json?
+  deletedAt        DateTime?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
   createdById      String?
@@ -460,6 +468,9 @@ model Student {
   @@index([programId])
   @@index([barcode])
   @@index([fullName])
+  @@index([department])
+  @@index([studentId])
+  @@index([deletedAt])
 }
 
 /// Meal session windows are fully configurable per org (and optionally campus).
@@ -474,17 +485,19 @@ model MealSessionConfig {
   name           String
   startTime      String
   endTime        String
-  gracePeriod    Int      @default(0)
-  sortOrder      Int      @default(0)
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  gracePeriod    Int       @default(0)
+  sortOrder      Int       @default(0)
+  isActive       Boolean   @default(true)
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   campus       Campus?      @relation(fields: [campusId], references: [id])
 
   @@unique([organizationId, scopeKey, code])
   @@index([organizationId, code])
+  @@index([deletedAt])
 }
 
 model MealRecord {
@@ -494,10 +507,12 @@ model MealRecord {
   campusId       String
   programId      String
   academicYearId String
-  week           Int?
-  day            String?
+  /// ISO week number (Part 5: weekNumber)
+  weekNumber     Int?
+  /// Day of week label (Part 5: dayOfWeek)
+  dayOfWeek      String?
   mealDate       DateTime         @db.Date
-  /// Matches MealSessionConfig.code for the organization.
+  /// Matches MealSessionConfig.code for the organization (session reference).
   mealCode       String
   servedAt       DateTime         @default(now())
   mentorId       String?
@@ -524,6 +539,9 @@ model MealRecord {
   @@index([organizationId, mealDate])
   @@index([campusId, mealDate])
   @@index([mealCode, mealDate])
+  @@index([studentId])
+  @@index([mentorId])
+  @@index([mealDate])
 }
 
 model ImportJob {
@@ -534,6 +552,7 @@ model ImportJob {
   originalFile   String
   mode           ImportMode      @default(ADD_ONLY)
   status         ImportJobStatus @default(PENDING)
+  totalRows      Int             @default(0)
   rowsImported   Int             @default(0)
   rowsFailed     Int             @default(0)
   durationMs     Int?
@@ -599,6 +618,7 @@ model AuditLog {
   @@index([organizationId])
   @@index([userId])
   @@index([action])
+  @@index([resource])
   @@index([campusId])
 }
 
@@ -625,6 +645,7 @@ model SystemSetting {
   scopeKey       String   @default("__platform__")
   key            String
   value          Json
+  description    String?
   updatedAt      DateTime @updatedAt
   updatedById    String?
 

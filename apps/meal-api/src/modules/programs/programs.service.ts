@@ -20,6 +20,7 @@ export class ProgramsService {
     const orgId = resolveActiveOrganizationId(user, organizationId);
     return this.prisma.program.findMany({
       where: {
+        deletedAt: null,
         ...scopeOrganizationFilter(user),
         ...(orgId ? { organizationId: orgId } : {}),
         ...(user.isSuperAdmin ? {} : { campusId: { in: user.campusIds } }),
@@ -107,6 +108,14 @@ export class ProgramsService {
   }
 
   async archive(user: AuthUser, id: string) {
-    return this.update(user, id, { status: ProgramStatus.ARCHIVED });
+    await this.get(user, id);
+    return this.prisma.program.update({
+      where: { id },
+      data: {
+        status: ProgramStatus.ARCHIVED,
+        deletedAt: new Date(),
+        updatedById: user.id,
+      },
+    });
   }
 }

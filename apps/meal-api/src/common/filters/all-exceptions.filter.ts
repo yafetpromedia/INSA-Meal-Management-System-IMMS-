@@ -20,6 +20,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Something went wrong. Please try again.';
     let code = 'INTERNAL_ERROR';
+    let errors: Array<{ field?: string; message: string }> | undefined;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -30,11 +31,23 @@ export class AllExceptionsFilter implements ExceptionFilter {
       } else if (typeof body === 'object' && body !== null) {
         const obj = body as Record<string, unknown>;
         const msg = obj.message;
-        message = Array.isArray(msg) ? msg.join(', ') : String(msg ?? message);
-        code = String(obj.error ?? HttpStatus[status] ?? 'HTTP_ERROR');
+        if (Array.isArray(msg)) {
+          message = 'Validation failed';
+          errors = msg.map((m) => {
+            const text = String(m);
+            const fieldMatch = text.match(/^(\w+)\s/);
+            return { field: fieldMatch?.[1], message: text };
+          });
+          code = 'VALIDATION_ERROR';
+        } else {
+          message = String(msg ?? message);
+          code = String(obj.error ?? obj.code ?? HttpStatus[status] ?? 'HTTP_ERROR');
+        }
+        if (Array.isArray(obj.errors)) {
+          errors = obj.errors as Array<{ field?: string; message: string }>;
+        }
       }
     } else if (exception instanceof Error) {
-      // Passport sometimes throws plain Error with status attached
       const maybeStatus = (exception as Error & { status?: number }).status;
       if (maybeStatus === 401) {
         status = HttpStatus.UNAUTHORIZED;
@@ -47,9 +60,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     response.status(status).json({
       success: false,
+      message,
+      ...(errors ? { errors } : {}),
       statusCode: status,
       code,
-      message,
       path: request.url,
       timestamp: new Date().toISOString(),
     });

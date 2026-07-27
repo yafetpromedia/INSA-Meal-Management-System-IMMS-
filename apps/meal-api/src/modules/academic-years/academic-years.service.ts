@@ -15,6 +15,7 @@ export class AcademicYearsService {
     const orgId = resolveActiveOrganizationId(user, organizationId);
     return this.prisma.academicYear.findMany({
       where: {
+        deletedAt: null,
         ...scopeOrganizationFilter(user),
         ...(orgId ? { organizationId: orgId } : {}),
       },
@@ -55,14 +56,46 @@ export class AcademicYearsService {
   }
 
   async setCurrent(user: AuthUser, id: string) {
-    const year = await this.prisma.academicYear.findUnique({ where: { id } });
+    const year = await this.prisma.academicYear.findFirst({ where: { id, deletedAt: null } });
     if (!year || !assertOrgAccess(user, year.organizationId)) {
       throw new NotFoundException('Academic year not found');
     }
     await this.prisma.academicYear.updateMany({
-      where: { organizationId: year.organizationId },
+      where: { organizationId: year.organizationId, deletedAt: null },
       data: { isCurrent: false },
     });
-    return this.prisma.academicYear.update({ where: { id }, data: { isCurrent: true } });
+    return this.prisma.academicYear.update({ where: { id }, data: { isCurrent: true, isActive: true } });
+  }
+
+  async update(
+    user: AuthUser,
+    id: string,
+    data: Partial<{ name: string; startDate: string; endDate: string; isActive: boolean }>,
+  ) {
+    const year = await this.prisma.academicYear.findFirst({ where: { id, deletedAt: null } });
+    if (!year || !assertOrgAccess(user, year.organizationId)) {
+      throw new NotFoundException('Academic year not found');
+    }
+    return this.prisma.academicYear.update({
+      where: { id },
+      data: {
+        name: data.name,
+        isActive: data.isActive,
+        startDate: data.startDate ? new Date(data.startDate) : undefined,
+        endDate: data.endDate ? new Date(data.endDate) : undefined,
+      },
+    });
+  }
+
+  async softDelete(user: AuthUser, id: string) {
+    const year = await this.prisma.academicYear.findFirst({ where: { id, deletedAt: null } });
+    if (!year || !assertOrgAccess(user, year.organizationId)) {
+      throw new NotFoundException('Academic year not found');
+    }
+    await this.prisma.academicYear.update({
+      where: { id },
+      data: { deletedAt: new Date(), isActive: false, isCurrent: false },
+    });
+    return { success: true };
   }
 }

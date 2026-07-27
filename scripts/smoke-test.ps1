@@ -1,9 +1,15 @@
 $ErrorActionPreference = 'Stop'
-$base = 'http://localhost:4000/api'
+$base = 'http://localhost:4000/api/v1'
 $script:results = New-Object System.Collections.Generic.List[object]
 
 function Add-Result($Name, $Status, $Ok, $Detail = '') {
   $script:results.Add([pscustomobject]@{ Name = $Name; Status = $Status; Ok = [bool]$Ok; Detail = $Detail })
+}
+
+function Unwrap-Data($obj) {
+  if ($null -eq $obj) { return $null }
+  if ($obj.PSObject.Properties.Name -contains 'data') { return $obj.data }
+  return $obj
 }
 
 function Invoke-Api {
@@ -29,7 +35,10 @@ function Invoke-Api {
     $resp = Invoke-WebRequest @params
     $ok = $Accept -contains [int]$resp.StatusCode
     Add-Result $Name $resp.StatusCode $ok ''
-    if ($resp.Content) { return ($resp.Content | ConvertFrom-Json) }
+    if ($resp.Content) {
+      $json = $resp.Content | ConvertFrom-Json
+      return (Unwrap-Data $json)
+    }
     return $null
   } catch {
     $code = 0
@@ -45,7 +54,7 @@ function Invoke-Api {
   }
 }
 
-Write-Host 'Running IMMS meal-api smoke tests...'
+Write-Host 'Running IMMS meal-api smoke tests (api/v1)...'
 
 $login = Invoke-Api 'AUTH.login' 'POST' '/auth/login' @{} '{"email":"superadmin@insa.gov.et","password":"ChangeMe!123"}'
 if (-not $login -or -not $login.accessToken) {
@@ -65,17 +74,22 @@ $orgs = Invoke-Api 'ORG.list' 'GET' '/organizations' $h
 $campuses = Invoke-Api 'CAMPUS.list' 'GET' "/campuses?organizationId=$orgId" $h
 $programs = Invoke-Api 'PROGRAM.list' 'GET' "/programs?organizationId=$orgId" $h
 $years = Invoke-Api 'YEAR.list' 'GET' "/academic-years?organizationId=$orgId" $h
-$students = Invoke-Api 'STUDENT.list' 'GET' "/students?organizationId=$orgId" $h
+$students = Invoke-Api 'STUDENT.list' 'GET' "/students?organizationId=$orgId&page=1&limit=20" $h
+Invoke-Api 'STUDENT.search' 'GET' "/students/search?q=DEMO&organizationId=$orgId" $h | Out-Null
 Invoke-Api 'STUDENT.barcode' 'GET' "/students/barcode/DEMO-1001-26?organizationId=$orgId" $h | Out-Null
 Invoke-Api 'USER.list' 'GET' '/users' $h | Out-Null
+Invoke-Api 'MENTOR.list' 'GET' '/mentors' $h | Out-Null
 Invoke-Api 'ROLE.list' 'GET' '/roles' $h | Out-Null
 $dash = Invoke-Api 'DASH.summary' 'GET' "/dashboard/summary?organizationId=$orgId" $h
 Invoke-Api 'MEAL.sessions' 'GET' "/meals/sessions?organizationId=$orgId" $h | Out-Null
-Invoke-Api 'MEAL.history' 'GET' "/meals/history?organizationId=$orgId" $h | Out-Null
+Invoke-Api 'MEAL_SESSIONS.list' 'GET' "/meal-sessions?organizationId=$orgId" $h | Out-Null
+Invoke-Api 'MEAL.history' 'GET' "/meals/history?organizationId=$orgId&page=1&limit=20" $h | Out-Null
 Invoke-Api 'MEAL.stats' 'GET' "/meals/today-stats?organizationId=$orgId" $h | Out-Null
+Invoke-Api 'MEAL.verify' 'POST' '/meals/verify' $h (@{ barcode = 'DEMO-1001-26'; organizationId = $orgId } | ConvertTo-Json) | Out-Null
 Invoke-Api 'IMPORT.history' 'GET' "/import/history?organizationId=$orgId" $h | Out-Null
+Invoke-Api 'REPORT.daily' 'GET' "/reports/daily?organizationId=$orgId" $h | Out-Null
 Invoke-Api 'REPORT.meals' 'GET' "/reports/meals?organizationId=$orgId" $h | Out-Null
-Invoke-Api 'AUDIT.list' 'GET' '/audit-logs' $h | Out-Null
+Invoke-Api 'AUDIT.list' 'GET' '/audit-logs?page=1&limit=20' $h | Out-Null
 Invoke-Api 'SETTINGS.list' 'GET' "/settings?organizationId=$orgId" $h | Out-Null
 
 # Attendance must not exist
@@ -96,7 +110,7 @@ Invoke-Api 'MEAL.sessionUpsert' 'PUT' '/meals/sessions' $h $sessionBody | Out-Nu
 
 $mealBody = @{ barcode = 'DEMO-1001-26'; organizationId = $orgId } | ConvertTo-Json
 # 409 = duplicate blocked (Rule 5) — valid on re-runs the same day
-$served = Invoke-Api 'MEAL.serve' 'POST' '/meals/serve' $h $mealBody @(200, 201, 409)
+Invoke-Api 'MEAL.serve' 'POST' '/meals/serve' $h $mealBody @(200, 201, 409) | Out-Null
 $overrideBody = @{
   barcode = 'DEMO-1001-26'
   organizationId = $orgId
@@ -113,5 +127,8 @@ if ($fail.Count -gt 0) {
   $fail | Format-Table -AutoSize
   exit 1
 }
-Write-Host "ORG=$orgId STUDENTS=$($students.total) MEALS_TODAY=$($dash.mealsServedToday)"
+
+$studentTotal = if ($students -is [array]) { $students.Count } elseif ($null -ne $students) { 1 } else { 0 }
+# list unwrap may return array (data) when paginated
+Write-Host "ORG=$orgId STUDENTS~$studentTotal MEALS_TODAY=$($dash.mealsServedToday)"
 exit 0

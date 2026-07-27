@@ -71,7 +71,15 @@ export class DashboardService {
     const orgId = resolveActiveOrganizationId(user, organizationId);
     return this.prisma.auditLog.findMany({
       where: {
-        action: { in: ['Meal.Serve', 'Meal.Override', 'Meal.SessionUpsert'] },
+        action: {
+          in: [
+            'Meal.Serve',
+            'Meal.Override',
+            'Meal.DuplicatePrevented',
+            'Meal.SessionUpsert',
+            'Meal.SessionUpdate',
+          ],
+        },
         ...scopeOrganizationFilter(user),
         ...scopeCampusFilter(user),
         ...(orgId ? { organizationId: orgId } : {}),

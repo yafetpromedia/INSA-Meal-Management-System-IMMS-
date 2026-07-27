@@ -270,6 +270,64 @@ async function main() {
     update: { value: 'INSA Meal Management System' },
   });
 
+  for (const setting of [
+    {
+      key: 'settings.meals',
+      value: {
+        defaultGraceMinutes: 15,
+        scannerAutoResetSeconds: 3,
+        soundEnabled: true,
+        allowAdminOverride: true,
+        requireOverrideReason: true,
+        oneMealPerSessionPerDay: true,
+      },
+      description: 'Meal distribution behaviour',
+    },
+    {
+      key: 'settings.security',
+      value: {
+        maxFailedLogins: 5,
+        lockoutMinutes: 30,
+        sessionTimeoutMinutes: 480,
+        requireStrongPassword: true,
+        allowRememberMe: true,
+      },
+      description: 'Authentication and session security',
+    },
+    {
+      key: 'settings.notifications',
+      value: {
+        emailEnabled: false,
+        mealAlerts: true,
+        duplicateAlerts: true,
+        dailyDigest: false,
+        adminEmail: '',
+      },
+      description: 'Alert and email notification preferences',
+    },
+    {
+      key: 'settings.branding',
+      value: {
+        accentColor: '#E85D04',
+        logoUrl: '',
+        faviconUrl: '',
+        supportEmail: '',
+      },
+      description: 'Brand appearance',
+    },
+  ]) {
+    await prisma.systemSetting.upsert({
+      where: { scopeKey_key: { scopeKey: PLATFORM, key: setting.key } },
+      create: {
+        scopeKey: PLATFORM,
+        key: setting.key,
+        value: setting.value,
+        description: setting.description,
+      },
+      update: { value: setting.value, description: setting.description },
+    });
+  }
+
   const org = await prisma.organization.upsert({
     where: { code: 'INSA' },
     create: {

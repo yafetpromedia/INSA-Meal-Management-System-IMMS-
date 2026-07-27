@@ -26,22 +26,38 @@ export class AuditService {
     return this.prisma.auditLog.create({ data: input });
   }
 
-  async list(user: AuthUser, query: { skip?: number; take?: number; action?: string }) {
+  async list(
+    user: AuthUser,
+    query: {
+      skip?: number;
+      take?: number;
+      page?: number;
+      limit?: number;
+      action?: string;
+      userId?: string;
+      resource?: string;
+    },
+  ) {
+    const skip = query.skip ?? 0;
+    const take = Math.min(query.take ?? query.limit ?? 20, 200);
+    const page = query.page ?? Math.floor(skip / take) + 1;
     const where = {
       ...scopeOrganizationFilter(user),
       ...scopeCampusFilter(user),
       ...(query.action ? { action: query.action } : {}),
+      ...(query.userId ? { userId: query.userId } : {}),
+      ...(query.resource ? { resource: query.resource } : {}),
     };
     const [items, total] = await Promise.all([
       this.prisma.auditLog.findMany({
         where,
         orderBy: { timestamp: 'desc' },
-        skip: query.skip ?? 0,
-        take: Math.min(query.take ?? 50, 200),
+        skip,
+        take,
         include: { user: { select: { id: true, fullName: true, email: true } } },
       }),
       this.prisma.auditLog.count({ where }),
     ]);
-    return { items, total };
+    return { items, total, page, limit: take };
   }
 }

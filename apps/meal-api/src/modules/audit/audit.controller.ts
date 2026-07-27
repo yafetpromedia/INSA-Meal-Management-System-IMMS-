@@ -1,40 +1,42 @@
-import { Controller, Delete, Get, Param, Query } from '@nestjs/common';
+import { Controller, Delete, ForbiddenException, Get, Param, Query } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { resolvePagination } from '../../common/utils/pagination.util';
 import { AuthUser } from '../auth/auth.types';
 import { AuditService } from './audit.service';
-import { ForbiddenException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
 
 @Controller('audit-logs')
 export class AuditController {
-  constructor(
-    private readonly audit: AuditService,
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly audit: AuditService) {}
 
   @Get()
   @RequirePermissions('AuditLog.View')
   list(
     @CurrentUser() user: AuthUser,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
     @Query('skip') skip?: string,
     @Query('take') take?: string,
     @Query('action') action?: string,
+    @Query('userId') userId?: string,
+    @Query('resource') resource?: string,
   ) {
+    const p = resolvePagination({ page, limit, skip, take });
     return this.audit.list(user, {
-      skip: skip ? Number(skip) : 0,
-      take: take ? Number(take) : 50,
+      skip: p.skip,
+      take: p.take,
+      page: p.page,
+      limit: p.limit,
       action,
+      userId,
+      resource,
     });
   }
 
+  /** Audit logs are immutable (SRS Part 5.17 / 5.22). */
   @Delete(':id')
-  @RequirePermissions('AuditLog.Delete')
-  async remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    if (!user.isSuperAdmin) {
-      throw new ForbiddenException('Only Super Admin may delete audit logs');
-    }
-    await this.prisma.auditLog.delete({ where: { id } });
-    return { success: true };
+  @RequirePermissions('AuditLog.View')
+  remove(@Param('id') _id: string) {
+    throw new ForbiddenException('Audit logs are immutable and cannot be deleted');
   }
 }
