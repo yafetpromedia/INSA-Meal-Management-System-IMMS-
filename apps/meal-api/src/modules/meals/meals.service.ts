@@ -437,6 +437,131 @@ export class MealsService {
     return { items, total, page, limit: take };
   }
 
+  /**
+   * Per-student meal profile: totals, days, weeks, sessions, and full timeline.
+   * `studentKey` accepts internal id, studentId (e.g. CTC-…), or barcode.
+   */
+  async studentProfile(user: AuthUser, studentKey: string, organizationId?: string) {
+    const orgId = resolveActiveOrganizationId(user, organizationId);
+    const student = await this.prisma.student.findFirst({
+      where: {
+        deletedAt: null,
+        ...scopeOrganizationFilter(user),
+        ...scopeCampusFilter(user),
+        ...(orgId ? { organizationId: orgId } : {}),
+        OR: [{ id: studentKey }, { studentId: studentKey }, { barcode: studentKey }],
+      },
+      include: {
+        campus: true,
+        program: true,
+        academicYear: true,
+      },
+    });
+    if (!student) throw new NotFoundException('Student Not Found');
+
+    const meals = await this.prisma.mealRecord.findMany({
+      where: {
+        studentId: student.id,
+        ...scopeOrganizationFilter(user),
+        status: { in: [MealRecordStatus.SERVED, MealRecordStatus.OVERRIDDEN] },
+      },
+      include: {
+        mentor: { select: { id: true, fullName: true } },
+        campus: { select: { shortName: true, name: true } },
+      },
+      orderBy: { servedAt: 'desc' },
+      take: 500,
+    });
+
+    const uniqueDays = new Set<string>();
+    const uniqueWeeks = new Set<string>();
+    const bySession: Record<string, number> = {};
+    const byWeekday: Record<string, number> = {};
+    const byWeekMap = new Map<
+      string,
+      { weekNumber: number; year: number; count: number; days: Set<string> }
+    >();
+
+    for (const m of meals) {
+      const dayKey = m.mealDate.toISOString().slice(0, 10);
+      uniqueDays.add(dayKey);
+
+      const year = m.mealDate.getUTCFullYear();
+      const weekNum = m.weekNumber ?? 0;
+      const weekKey = `${year}-W${String(weekNum).padStart(2, '0')}`;
+      uniqueWeeks.add(weekKey);
+
+      const code = (m.mealCode || 'UNKNOWN').toUpperCase();
+      bySession[code] = (bySession[code] ?? 0) + 1;
+
+      const weekday = m.dayOfWeek || 'Unknown';
+      byWeekday[weekday] = (byWeekday[weekday] ?? 0) + 1;
+
+      const weekEntry = byWeekMap.get(weekKey) ?? {
+        weekNumber: weekNum,
+        year,
+        count: 0,
+        days: new Set<string>(),
+      };
+      weekEntry.count += 1;
+      weekEntry.days.add(dayKey);
+      byWeekMap.set(weekKey, weekEntry);
+    }
+
+    const byWeek = [...byWeekMap.entries()]
+      .map(([key, v]) => ({
+        key,
+        weekNumber: v.weekNumber,
+        year: v.year,
+        meals: v.count,
+        daysEaten: v.days.size,
+      }))
+      .sort((a, b) => (a.year !== b.year ? b.year - a.year : b.weekNumber - a.weekNumber));
+
+    const firstMeal = meals.length ? meals[meals.length - 1]!.servedAt : null;
+    const lastMeal = meals.length ? meals[0]!.servedAt : null;
+
+    return {
+      student: {
+        id: student.id,
+        studentId: student.studentId,
+        barcode: student.barcode,
+        fullName: student.fullName,
+        department: student.department,
+        status: student.status,
+        campus: student.campus
+          ? { id: student.campus.id, shortName: student.campus.shortName, name: student.campus.name }
+          : null,
+        program: student.program ? { id: student.program.id, name: student.program.name } : null,
+        academicYear: student.academicYear
+          ? { id: student.academicYear.id, name: student.academicYear.name }
+          : null,
+      },
+      summary: {
+        totalMeals: meals.length,
+        daysEaten: uniqueDays.size,
+        weeksActive: uniqueWeeks.size,
+        bySession,
+        byWeekday,
+        firstMealAt: firstMeal,
+        lastMealAt: lastMeal,
+      },
+      byWeek,
+      meals: meals.map((m) => ({
+        id: m.id,
+        mealCode: m.mealCode,
+        mealDate: m.mealDate,
+        servedAt: m.servedAt,
+        weekNumber: m.weekNumber,
+        dayOfWeek: m.dayOfWeek,
+        status: m.status,
+        location: m.location,
+        mentor: m.mentor,
+        campus: m.campus,
+      })),
+    };
+  }
+
   async todayStats(user: AuthUser, organizationId?: string) {
     const mealDate = ethiopiaCalendarDate();
     const orgId = resolveActiveOrganizationId(user, organizationId);

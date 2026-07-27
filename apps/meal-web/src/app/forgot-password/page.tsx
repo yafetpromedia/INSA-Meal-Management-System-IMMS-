@@ -9,7 +9,7 @@ import { useToast } from '@/components/providers/ToastProvider';
 
 export default function ForgotPasswordPage() {
   const { push } = useToast();
-  const [email, setEmail] = useState('');
+  const [account, setAccount] = useState('');
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(e: FormEvent) {
@@ -18,11 +18,11 @@ export default function ForgotPasswordPage() {
     try {
       await api('/auth/forgot-password', {
         method: 'POST',
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ account: account.trim() }),
       });
       push({
         kind: 'info',
-        title: 'Check your email',
+        title: 'Check your inbox',
         message: 'If an account exists, reset instructions were sent.',
       });
     } catch (err) {
@@ -43,11 +43,11 @@ export default function ForgotPasswordPage() {
         <h1>IMMS</h1>
         <p>Reset your password</p>
         <Input
-          label="Email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          label="Username or email"
+          value={account}
+          onChange={(e) => setAccount(e.target.value)}
           required
+          autoComplete="username"
         />
         <Button type="submit" loading={loading}>
           Send reset link

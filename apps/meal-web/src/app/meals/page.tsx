@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { BarcodeCamera } from '@/components/BarcodeCamera';
-import { Button } from '@/components/ui/Button';
 import { StatusChip } from '@/components/ui/Badge';
 import { api, getActiveOrganizationId } from '@/lib/api';
 import { playError, playSuccess, playWarning } from '@/lib/sounds';
@@ -48,7 +47,7 @@ type RecentScan = {
 type GateState =
   | { kind: 'idle' }
   | {
-      kind: 'eligible';
+      kind: 'serving';
       student: Student;
       mealSession: string | null;
     }
@@ -82,10 +81,19 @@ function initials(name: string) {
     .toUpperCase();
 }
 
+function clockShort() {
+  return formatEthiopiaTime(new Date(), {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
 export default function MealsPage() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const resetTimer = useRef<number | null>(null);
+  const inFlight = useRef(false);
 
   const [barcode, setBarcode] = useState('');
   const [currentMeal, setCurrentMeal] = useState<string | null>(null);
@@ -93,7 +101,6 @@ export default function MealsPage() {
   const [busy, setBusy] = useState(false);
   const [gate, setGate] = useState<GateState>({ kind: 'idle' });
   const [recent, setRecent] = useState<RecentScan[]>([]);
-  /** Start off so the browser permission prompt is tied to an explicit user tap (more reliable). */
   const [cameraOn, setCameraOn] = useState(false);
 
   const popupOpen = gate.kind !== 'idle';
@@ -109,6 +116,8 @@ export default function MealsPage() {
     }
     setBarcode('');
     setGate({ kind: 'idle' });
+    inFlight.current = false;
+    setBusy(false);
     focusInput();
   }, [focusInput]);
 
@@ -150,31 +159,88 @@ export default function MealsPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [popupOpen, clearStation]);
 
-  function pushRecent(entry: Omit<RecentScan, 'id' | 'at'>) {
+  const pushRecent = useCallback((entry: Omit<RecentScan, 'id' | 'at'>) => {
     setRecent((prev) =>
       [
         {
           id: `${Date.now()}`,
-          at: formatEthiopiaTime(new Date(), {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-          }),
+          at: clockShort(),
           ...entry,
         },
         ...prev,
       ].slice(0, 12),
     );
-  }
+  }, []);
+
+  const serveStudent = useCallback(
+    async (student: Student, mealSession: string | null) => {
+      const orgId = getActiveOrganizationId();
+      try {
+        await api('/meals/serve', {
+          method: 'POST',
+          body: JSON.stringify({ barcode: student.barcode, organizationId: orgId }),
+        });
+        playSuccess();
+        const time = clockShort();
+        setGate({
+          kind: 'success',
+          name: student.fullName,
+          studentId: student.studentId,
+          meal: mealSession ?? currentMeal ?? 'Meal',
+          time,
+        });
+        pushRecent({
+          name: student.fullName,
+          studentId: student.studentId,
+          status: 'served',
+          mealSession: mealSession ?? currentMeal,
+        });
+        // Brief success flash, then ready for next scan
+        scheduleClear(900);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Serve failed';
+        if (message.toLowerCase().includes('duplicate')) {
+          playWarning();
+          setGate({
+            kind: 'duplicate',
+            student,
+            meal: mealSession ?? currentMeal ?? 'Meal',
+            time: clockShort(),
+            message,
+          });
+          pushRecent({
+            name: student.fullName,
+            studentId: student.studentId,
+            status: 'duplicate',
+            mealSession: mealSession ?? currentMeal,
+          });
+          scheduleClear(1600);
+        } else {
+          playError();
+          setGate({ kind: 'blocked', student, message });
+          pushRecent({
+            name: student.fullName,
+            studentId: student.studentId,
+            status: 'rejected',
+            mealSession: mealSession ?? currentMeal,
+          });
+          scheduleClear(1600);
+        }
+      }
+    },
+    [currentMeal, pushRecent, scheduleClear],
+  );
 
   const verifyBarcode = useCallback(
     async (value: string) => {
       const code = value.trim();
-      if (!code || busy) return;
+      if (!code || inFlight.current) return;
       if (resetTimer.current) {
         window.clearTimeout(resetTimer.current);
         resetTimer.current = null;
       }
+
+      inFlight.current = true;
       setBusy(true);
       setBarcode(code);
 
@@ -191,11 +257,7 @@ export default function MealsPage() {
             kind: 'duplicate',
             student: result.student,
             meal: result.mealSession ?? currentMeal ?? 'Meal',
-            time: formatEthiopiaTime(new Date(), {
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false,
-            }),
+            time: clockShort(),
             message: result.reason,
           });
           pushRecent({
@@ -204,8 +266,11 @@ export default function MealsPage() {
             status: 'duplicate',
             mealSession: result.mealSession,
           });
-          scheduleClear(2200);
-        } else if (!result.eligible) {
+          scheduleClear(1600);
+          return;
+        }
+
+        if (!result.eligible) {
           playWarning();
           setGate({
             kind: 'blocked',
@@ -218,14 +283,17 @@ export default function MealsPage() {
             status: 'rejected',
             mealSession: result.mealSession,
           });
-          scheduleClear(2200);
-        } else {
-          setGate({
-            kind: 'eligible',
-            student: result.student,
-            mealSession: result.mealSession,
-          });
+          scheduleClear(1600);
+          return;
         }
+
+        // Eligible → auto-serve immediately
+        setGate({
+          kind: 'serving',
+          student: result.student,
+          mealSession: result.mealSession,
+        });
+        await serveStudent(result.student, result.mealSession);
       } catch (err) {
         playError();
         const message = err instanceof Error ? err.message : 'Student Not Found';
@@ -239,12 +307,13 @@ export default function MealsPage() {
           studentId: code,
           status: 'not_found',
         });
-        scheduleClear(1800);
+        scheduleClear(1400);
       } finally {
+        inFlight.current = false;
         setBusy(false);
       }
     },
-    [busy, currentMeal, scheduleClear],
+    [currentMeal, pushRecent, scheduleClear, serveStudent],
   );
 
   const onCameraDetect = useCallback(
@@ -254,76 +323,11 @@ export default function MealsPage() {
     [verifyBarcode],
   );
 
-  async function serveMeal() {
-    if (gate.kind !== 'eligible' || busy) return;
-    const { student, mealSession } = gate;
-    setBusy(true);
-    const orgId = getActiveOrganizationId();
-    try {
-      await api('/meals/serve', {
-        method: 'POST',
-        body: JSON.stringify({ barcode: student.barcode, organizationId: orgId }),
-      });
-      playSuccess();
-      const time = formatEthiopiaTime(new Date(), {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      });
-      setGate({
-        kind: 'success',
-        name: student.fullName,
-        studentId: student.studentId,
-        meal: mealSession ?? currentMeal ?? 'Meal',
-        time,
-      });
-      pushRecent({
-        name: student.fullName,
-        studentId: student.studentId,
-        status: 'served',
-        mealSession: mealSession ?? currentMeal,
-      });
-      scheduleClear(1200);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Serve failed';
-      if (message.toLowerCase().includes('duplicate')) {
-        playWarning();
-        setGate({
-          kind: 'duplicate',
-          student,
-          meal: mealSession ?? currentMeal ?? 'Meal',
-          time: formatEthiopiaTime(new Date(), {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-          }),
-          message,
-        });
-        scheduleClear(2200);
-      } else {
-        playError();
-        setGate({ kind: 'blocked', student, message });
-        scheduleClear(2200);
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
   function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (gate.kind === 'eligible') {
-      void serveMeal();
-      return;
-    }
-    if (popupOpen) return;
+    if (popupOpen || busy) return;
     void verifyBarcode(barcode);
   }
-
-  const studentInGate =
-    gate.kind === 'eligible' || gate.kind === 'blocked' || gate.kind === 'duplicate'
-      ? gate.student
-      : null;
 
   return (
     <AppShell>
@@ -331,7 +335,7 @@ export default function MealsPage() {
         <header className="meal-page-head">
           <div>
             <h1 className="page-title">Meal Distribution</h1>
-            <p className="page-sub meal-page-sub">Scan → popup → serve</p>
+            <p className="page-sub meal-page-sub">Scan → auto-serve → next</p>
           </div>
           <div className="meal-meta">
             <div className={`meal-pill ${currentMeal ? 'is-live' : ''}`}>
@@ -371,12 +375,10 @@ export default function MealsPage() {
                 autoComplete="off"
                 autoFocus
                 aria-label="Barcode scanner input"
-                disabled={busy || (popupOpen && gate.kind !== 'eligible')}
+                disabled={busy || popupOpen}
               />
               <p className="meal-hint muted">
-                {gate.kind === 'eligible'
-                  ? 'Press Enter to serve · Esc to cancel'
-                  : 'Camera, USB, or type — Enter verifies instantly'}
+                Eligible students are served automatically — ready for the next scan
               </p>
             </form>
 
@@ -384,9 +386,9 @@ export default function MealsPage() {
               <ScanLine size={22} strokeWidth={1.5} aria-hidden />
               <p>
                 {busy
-                  ? 'Checking…'
+                  ? 'Processing…'
                   : cameraOn
-                    ? 'Point camera at barcode — result opens in a popup'
+                    ? 'Point camera at barcode — eligible meals serve automatically'
                     : 'Ready for USB scan or typed ID'}
               </p>
             </div>
@@ -446,62 +448,48 @@ export default function MealsPage() {
           className={`meal-gate-backdrop meal-gate-${gate.kind}`}
           role="presentation"
           onClick={() => {
-            if (gate.kind !== 'eligible') clearStation();
+            if (gate.kind !== 'serving') clearStation();
           }}
         >
           <div
             className="meal-gate-popup"
             role="dialog"
             aria-modal="true"
-            aria-label="Meal verification"
+            aria-label="Meal result"
             onClick={(e) => e.stopPropagation()}
           >
-            {gate.kind === 'eligible' && studentInGate ? (
+            {gate.kind === 'serving' ? (
               <>
                 <div className="meal-gate-tone ok" aria-hidden />
                 <div className="meal-gate-body">
                   <div className="meal-gate-avatar" aria-hidden>
-                    {initials(studentInGate.fullName)}
+                    {initials(gate.student.fullName)}
                   </div>
-                  <h2 className="meal-gate-name">{studentInGate.fullName}</h2>
+                  <h2 className="meal-gate-name">{gate.student.fullName}</h2>
                   <p className="meal-gate-id muted">
-                    {studentInGate.studentId}
+                    {gate.student.studentId}
                     <span aria-hidden> · </span>
-                    {studentInGate.barcode}
+                    {gate.student.barcode}
                   </p>
                   <div className="meal-chips meal-gate-chips">
                     <StatusChip tone="info">
-                      {studentInGate.program?.name ?? 'Program'}
+                      {gate.student.program?.name ?? 'Program'}
                     </StatusChip>
                     <StatusChip tone="info">
-                      {studentInGate.campus?.shortName ??
-                        studentInGate.campus?.name ??
+                      {gate.student.campus?.shortName ??
+                        gate.student.campus?.name ??
                         'Campus'}
                     </StatusChip>
-                    {studentInGate.department ? (
-                      <StatusChip tone="info">{studentInGate.department}</StatusChip>
+                    {gate.student.department ? (
+                      <StatusChip tone="info">{gate.student.department}</StatusChip>
                     ) : null}
                   </div>
                   <div className="meal-gate-banner ok">
                     <Check size={20} strokeWidth={2.25} aria-hidden />
                     <div>
-                      <strong>Eligible</strong>
-                      <span>Ready for {gate.mealSession ?? currentMeal ?? 'meal'}</span>
+                      <strong>Eligible — serving…</strong>
+                      <span>{gate.mealSession ?? currentMeal ?? 'Meal'}</span>
                     </div>
-                  </div>
-                  <div className="meal-gate-actions">
-                    <Button
-                      type="button"
-                      className="meal-gate-serve"
-                      autoFocus
-                      onClick={() => void serveMeal()}
-                      loading={busy}
-                    >
-                      Serve meal
-                    </Button>
-                    <button type="button" className="meal-gate-skip" onClick={clearStation}>
-                      Cancel · Esc
-                    </button>
                   </div>
                 </div>
               </>
@@ -521,6 +509,9 @@ export default function MealsPage() {
                     <span className="muted">
                       {gate.studentId} · {gate.meal} · {gate.time}
                     </span>
+                  </p>
+                  <p className="muted" style={{ margin: 0, fontSize: '0.8rem' }}>
+                    Ready for next scan…
                   </p>
                 </div>
               </>
@@ -542,9 +533,6 @@ export default function MealsPage() {
                       {gate.time ? ` · ${gate.time}` : ''}
                     </span>
                   </p>
-                  <button type="button" className="meal-gate-skip" onClick={clearStation}>
-                    Next student
-                  </button>
                 </div>
               </>
             ) : null}
@@ -562,9 +550,6 @@ export default function MealsPage() {
                     <br />
                     <span className="muted">{gate.message}</span>
                   </p>
-                  <button type="button" className="meal-gate-skip" onClick={clearStation}>
-                    Next student
-                  </button>
                 </div>
               </>
             ) : null}
@@ -578,9 +563,6 @@ export default function MealsPage() {
                   </div>
                   <h2 className="meal-gate-name">Not found</h2>
                   <p className="meal-gate-id muted">{gate.code}</p>
-                  <button type="button" className="meal-gate-skip" onClick={clearStation}>
-                    Try again
-                  </button>
                 </div>
               </>
             ) : null}

@@ -2,7 +2,8 @@
 
 export type ImmsUser = {
   fullName?: string;
-  email?: string;
+  username?: string;
+  email?: string | null;
   roles?: string[];
   campusIds?: string[];
   programIds?: string[];

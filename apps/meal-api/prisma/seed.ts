@@ -435,25 +435,37 @@ async function main() {
   }
 
   const email = process.env.SEED_SUPERADMIN_EMAIL ?? 'superadmin@insa.gov.et';
+  const username = (process.env.SEED_SUPERADMIN_USERNAME ?? 'superadmin').toLowerCase();
   const password = process.env.SEED_SUPERADMIN_PASSWORD ?? 'ChangeMe!123';
   const passwordHash = await argon2.hash(password);
   const superRole = await prisma.role.findFirstOrThrow({
     where: { scopeKey: PLATFORM, name: 'SuperAdmin' },
   });
 
-  const admin = await prisma.user.upsert({
-    where: { email },
-    create: {
-      email,
-      fullName: 'IMMS Super Admin',
-      passwordHash,
-      status: AccountStatus.ACTIVE,
-      roles: { create: [{ roleId: superRole.id }] },
-      organizationAssignments: {
-        create: [{ organizationId: org.id, isDefault: true }],
+  const existingByUsername = await prisma.user.findUnique({ where: { username } });
+  const existingByEmail = await prisma.user.findUnique({ where: { email } });
+  const admin =
+    existingByUsername ??
+    existingByEmail ??
+    (await prisma.user.create({
+      data: {
+        username,
+        email,
+        fullName: 'IMMS Super Admin',
+        passwordHash,
+        status: AccountStatus.ACTIVE,
+        roles: { create: [{ roleId: superRole.id }] },
+        organizationAssignments: {
+          create: [{ organizationId: org.id, isDefault: true }],
+        },
       },
-    },
-    update: {
+    }));
+
+  await prisma.user.update({
+    where: { id: admin.id },
+    data: {
+      username,
+      email,
       passwordHash,
       status: AccountStatus.ACTIVE,
       fullName: 'IMMS Super Admin',
@@ -495,7 +507,7 @@ async function main() {
   // eslint-disable-next-line no-console
   console.log('IMMS seed complete');
   // eslint-disable-next-line no-console
-  console.log(`Super Admin: ${email} / ${password}`);
+  console.log(`Super Admin: ${username} / ${password}`);
   // eslint-disable-next-line no-console
   console.log(`Sample org: ${org.code}`);
 }

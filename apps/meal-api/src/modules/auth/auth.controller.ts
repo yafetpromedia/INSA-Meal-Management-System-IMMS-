@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Patch, Post, Req } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -11,6 +11,7 @@ import {
   LogoutDto,
   RefreshTokenDto,
   ResetPasswordDto,
+  UpdateMyProfileDto,
 } from './dto/auth.dto';
 
 @Controller('auth')
@@ -75,5 +76,10 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: AuthUser) {
     return this.auth.me(user);
+  }
+
+  @Patch('me')
+  updateMe(@CurrentUser() user: AuthUser, @Body() dto: UpdateMyProfileDto) {
+    return this.auth.updateMyProfile(user, dto);
   }
 }

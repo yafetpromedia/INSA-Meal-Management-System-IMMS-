@@ -9,7 +9,8 @@ import { UsersService } from './users.service';
 const STAFF_ROLES = ['Mentor', 'FoodStaff'] as const;
 
 class CreateMentorDto {
-  @IsEmail() email!: string;
+  @IsString() @MinLength(3) username!: string;
+  @IsOptional() @IsEmail() email?: string;
   @IsString() @MinLength(2) fullName!: string;
   @IsString() @MinLength(8) password!: string;
   @IsOptional() @IsString() phone?: string;

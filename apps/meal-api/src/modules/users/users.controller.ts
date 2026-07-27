@@ -7,7 +7,8 @@ import { AuthUser } from '../auth/auth.types';
 import { UsersService } from './users.service';
 
 class CreateUserDto {
-  @IsString() email!: string;
+  @IsString() @MinLength(3) username!: string;
+  @IsOptional() @IsString() email?: string;
   @IsString() @MinLength(2) fullName!: string;
   @IsString() @MinLength(8) password!: string;
   @IsOptional() @IsString() phone?: string;

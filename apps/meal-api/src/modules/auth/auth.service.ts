@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -10,9 +11,19 @@ import * as argon2 from 'argon2';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { isStrongPassword, PASSWORD_POLICY_MESSAGE } from '../../common/utils/password.util';
+import {
+  isValidUsername,
+  normalizeUsername,
+  USERNAME_POLICY_MESSAGE,
+} from '../../common/utils/username.util';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from './auth.types';
-import { ForgotPasswordDto, LoginDto, ResetPasswordDto } from './dto/auth.dto';
+import {
+  ForgotPasswordDto,
+  LoginDto,
+  ResetPasswordDto,
+  UpdateMyProfileDto,
+} from './dto/auth.dto';
 
 @Injectable()
 export class AuthService {
@@ -24,8 +35,16 @@ export class AuthService {
   ) {}
 
   async login(dto: LoginDto, meta: { ip?: string; userAgent?: string }) {
-    const user = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase() },
+    const loginId = (dto.username ?? dto.email ?? '').trim().toLowerCase();
+    if (!loginId) {
+      throw new UnauthorizedException('Invalid username or password');
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        deletedAt: null,
+        OR: [{ username: loginId }, { email: loginId }],
+      },
       include: {
         roles: { include: { role: true } },
         organizationAssignments: true,
@@ -35,7 +54,7 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('Invalid username or password');
     }
 
     if (user.status === AccountStatus.LOCKED) {
@@ -59,7 +78,7 @@ export class AuthService {
     const valid = await argon2.verify(user.passwordHash, dto.password);
     if (!valid) {
       await this.handleFailedLogin(user.id, user.failedLoginAttempts);
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('Invalid username or password');
     }
 
     await this.prisma.user.update({
@@ -67,7 +86,7 @@ export class AuthService {
       data: { failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
     });
 
-    const tokens = await this.issueTokens(user.id, user.email, meta);
+    const tokens = await this.issueTokens(user.id, user.username, meta);
 
     await this.audit.log({
       userId: user.id,
@@ -89,6 +108,7 @@ export class AuthService {
       refreshToken: tokens.refreshToken,
       user: {
         id: user.id,
+        username: user.username,
         email: user.email,
         fullName: user.fullName,
         roles: user.roles.map((r) => r.role.name),
@@ -115,7 +135,7 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
 
-    return this.issueTokens(session.userId, session.user.email, meta);
+    return this.issueTokens(session.userId, session.user.username, meta);
   }
 
   async logout(user: AuthUser, refreshToken?: string, meta?: { ip?: string; userAgent?: string }) {
@@ -154,10 +174,15 @@ export class AuthService {
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } });
-    // Always return success to avoid email enumeration
+    const account = dto.account.trim().toLowerCase();
+    const user = await this.prisma.user.findFirst({
+      where: {
+        deletedAt: null,
+        OR: [{ username: account }, { email: account }],
+      },
+    });
     if (!user) {
-      return { success: true, message: 'If the email exists, a reset link was sent.' };
+      return { success: true, message: 'If the account exists, a reset link was sent.' };
     }
 
     const token = randomBytes(32).toString('hex');
@@ -170,10 +195,9 @@ export class AuthService {
       },
     });
 
-    // Email delivery stub — token returned only in non-production for local testing
     const payload: Record<string, unknown> = {
       success: true,
-      message: 'If the email exists, a reset link was sent.',
+      message: 'If the account exists, a reset link was sent.',
     };
     if (process.env.NODE_ENV !== 'production') {
       payload.resetToken = token;
@@ -197,7 +221,12 @@ export class AuthService {
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: record.userId },
-        data: { passwordHash, failedLoginAttempts: 0, lockedUntil: null, status: AccountStatus.ACTIVE },
+        data: {
+          passwordHash,
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+          status: AccountStatus.ACTIVE,
+        },
       }),
       this.prisma.passwordResetToken.update({
         where: { id: record.id },
@@ -220,7 +249,144 @@ export class AuthService {
   }
 
   async me(user: AuthUser) {
-    return user;
+    const row = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        status: true,
+        lastLoginAt: true,
+      },
+    });
+    if (!row) throw new UnauthorizedException('Account not found');
+    return {
+      ...user,
+      username: row.username,
+      email: row.email,
+      fullName: row.fullName,
+      phone: row.phone,
+      status: row.status,
+      lastLoginAt: row.lastLoginAt,
+    };
+  }
+
+  async updateMyProfile(user: AuthUser, dto: UpdateMyProfileDto) {
+    const changingPassword = Boolean(dto.newPassword);
+    if (changingPassword) {
+      if (!dto.currentPassword) {
+        throw new BadRequestException('Current password is required to set a new password');
+      }
+      if (!isStrongPassword(dto.newPassword!)) {
+        throw new BadRequestException(PASSWORD_POLICY_MESSAGE);
+      }
+    }
+
+    const current = await this.prisma.user.findUnique({ where: { id: user.id } });
+    if (!current || current.deletedAt) throw new UnauthorizedException('Account not found');
+
+    if (changingPassword) {
+      const ok = await argon2.verify(current.passwordHash, dto.currentPassword!);
+      if (!ok) throw new BadRequestException('Current password is incorrect');
+    }
+
+    const data: {
+      username?: string;
+      fullName?: string;
+      email?: string | null;
+      phone?: string | null;
+      passwordHash?: string;
+    } = {};
+
+    if (dto.username != null) {
+      if (!isValidUsername(dto.username)) {
+        throw new BadRequestException(USERNAME_POLICY_MESSAGE);
+      }
+      const username = normalizeUsername(dto.username);
+      if (username !== current.username) {
+        const taken = await this.prisma.user.findFirst({
+          where: { username, NOT: { id: user.id } },
+        });
+        if (taken) throw new ConflictException('Username is already taken');
+        data.username = username;
+      }
+    }
+
+    if (dto.fullName != null && dto.fullName.trim()) {
+      data.fullName = dto.fullName.trim();
+    }
+
+    if (dto.email !== undefined) {
+      const email = dto.email?.trim() ? dto.email.trim().toLowerCase() : null;
+      if (email) {
+        const taken = await this.prisma.user.findFirst({
+          where: { email, NOT: { id: user.id } },
+        });
+        if (taken) throw new ConflictException('Email is already in use');
+      }
+      data.email = email;
+    }
+
+    if (dto.phone !== undefined) {
+      data.phone = dto.phone.trim() || null;
+    }
+
+    if (changingPassword) {
+      data.passwordHash = await argon2.hash(dto.newPassword!);
+    }
+
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException('No changes provided');
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: user.id },
+      data,
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        status: true,
+        lastLoginAt: true,
+      },
+    });
+
+    if (changingPassword) {
+      await this.prisma.session.updateMany({
+        where: { userId: user.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    }
+
+    await this.audit.log({
+      userId: user.id,
+      action: changingPassword ? 'AUTH.PASSWORD_CHANGE' : 'AUTH.PROFILE_UPDATE',
+      resource: 'User',
+      resourceId: user.id,
+      newValue: {
+        username: updated.username,
+        email: updated.email,
+        fullName: updated.fullName,
+        passwordChanged: changingPassword,
+      },
+    });
+
+    return {
+      ...updated,
+      roles: user.roles,
+      organizationIds: user.organizationIds,
+      defaultOrganizationId: user.defaultOrganizationId,
+      campusIds: user.campusIds,
+      programIds: user.programIds,
+      passwordChanged: changingPassword,
+      message: changingPassword
+        ? 'Password updated. Please sign in again.'
+        : 'Profile updated.',
+    };
   }
 
   private async handleFailedLogin(userId: string, current: number) {
@@ -246,10 +412,10 @@ export class AuthService {
 
   private async issueTokens(
     userId: string,
-    email: string,
+    username: string,
     meta: { ip?: string; userAgent?: string },
   ) {
-    const payload = { sub: userId, email };
+    const payload = { sub: userId, username };
     const accessToken = await this.jwt.signAsync(payload, {
       secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
       expiresIn: this.config.get('JWT_ACCESS_EXPIRES_IN') ?? '15m',

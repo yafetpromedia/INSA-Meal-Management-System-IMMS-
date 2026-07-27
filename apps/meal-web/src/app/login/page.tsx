@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { login } from '@/lib/api';
 import { homePathForRole, readStoredUser } from '@/lib/rbac';
@@ -12,36 +12,28 @@ import { useToast } from '@/components/providers/ToastProvider';
 export default function LoginPage() {
   const router = useRouter();
   const { push } = useToast();
-  const [email, setEmail] = useState('superadmin@insa.gov.et');
+  const [username, setUsername] = useState('superadmin');
   const [password, setPassword] = useState('ChangeMe!123');
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [touched, setTouched] = useState({ email: false, password: false });
-
-  const emailError = useMemo(() => {
-    if (!touched.email) return '';
-    if (!email.trim()) return 'Email is required.';
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Enter a valid email.';
-    return '';
-  }, [email, touched.email]);
-
-  const passwordError = useMemo(() => {
-    if (!touched.password) return '';
-    if (!password) return 'Password is required.';
-    if (password.length < 8) return 'Password must be at least 8 characters.';
-    return '';
-  }, [password, touched.password]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    setTouched({ email: true, password: true });
-    if (emailError || passwordError || !email || password.length < 8) return;
+    const user = username.trim();
+    if (!user) {
+      setError('Enter your username (or email).');
+      return;
+    }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
 
     setLoading(true);
     setError('');
     try {
-      await login(email, password);
+      await login(user, password);
       if (!remember) sessionStorage.setItem('imms_remember', '0');
       push({ kind: 'success', title: 'Signed in' });
       router.push(homePathForRole(readStoredUser()));
@@ -64,7 +56,7 @@ export default function LoginPage() {
             <span>INSA Meal Management</span>
           </div>
         </div>
-        <p>Sign in to manage meal distribution across campuses.</p>
+        <p>Sign in with your username. Email still works if you prefer.</p>
         {error ? (
           <div className="error" role="alert">
             {error}
@@ -72,13 +64,11 @@ export default function LoginPage() {
         ) : null}
 
         <Input
-          label="Email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          onBlur={() => setTouched((t) => ({ ...t, email: true }))}
-          error={emailError}
+          label="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
           autoComplete="username"
+          placeholder="superadmin"
           required
         />
 
@@ -87,8 +77,6 @@ export default function LoginPage() {
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          onBlur={() => setTouched((t) => ({ ...t, password: true }))}
-          error={passwordError}
           autoComplete="current-password"
           required
         />
@@ -101,6 +89,10 @@ export default function LoginPage() {
         <Button type="submit" loading={loading}>
           Sign in
         </Button>
+
+        <p className="muted" style={{ margin: 0, fontSize: '0.8rem' }}>
+          Default admin: <strong>superadmin</strong> / <strong>ChangeMe!123</strong>
+        </p>
 
         <div className="auth-links">
           <Link href="/forgot-password">Forgot password?</Link>

@@ -311,7 +311,10 @@ model Program {
 
 model User {
   id                  String        @id @default(cuid())
-  email               String        @unique
+  /// Login identifier (unique). Prefer this over email for sign-in.
+  username            String        @unique
+  /// Optional contact / recovery email
+  email               String?       @unique
   passwordHash        String
   fullName            String
   phone               String?

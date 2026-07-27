@@ -333,9 +333,9 @@ function StudentsContent() {
                             </Button>
                           </>
                         ) : null}
-                        <Link href={`/meal-history?studentId=${s.id}`}>
+                        <Link href={`/students/${s.id}`}>
                           <Button type="button" variant="ghost" size="sm">
-                            History
+                            Meals
                           </Button>
                         </Link>
                       </div>

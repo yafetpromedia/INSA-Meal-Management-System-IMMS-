@@ -17,6 +17,7 @@ import {
   Search,
   Settings,
   Sun,
+  UserCircle,
   UtensilsCrossed,
   Users,
   History,
@@ -138,6 +139,20 @@ const NAV: NavItem[] = [
     label: 'Audit Logs',
     icon: ScrollText,
     roles: ['SuperAdmin', 'Admin', 'CampusCoordinator'],
+  },
+  {
+    href: '/profile',
+    label: 'Profile',
+    icon: UserCircle,
+    roles: [
+      'SuperAdmin',
+      'Admin',
+      'CampusCoordinator',
+      'ProgramCoordinator',
+      'Mentor',
+      'FoodStaff',
+      'Viewer',
+    ],
   },
   {
     href: '/settings',
@@ -297,7 +312,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
             <div className="user-chip" aria-label="Current user">
               <strong>{user?.fullName ?? 'User'}</strong>
-              <span className="muted">{user?.roles?.[0] ?? 'Staff'}</span>
+              <span className="muted">
+                @{user?.username ?? 'account'} · {user?.roles?.[0] ?? 'Staff'}
+              </span>
             </div>
           </div>
         </header>

@@ -5,7 +5,8 @@ export type LoginResponse = {
   refreshToken: string;
   user: {
     id: string;
-    email: string;
+    username: string;
+    email?: string | null;
     fullName: string;
     roles: string[];
     organizationIds: string[];
@@ -119,10 +120,15 @@ export async function api<T>(path: string, options: RequestInit = {}, retried = 
   return unwrap<T>(payload);
 }
 
-export async function login(email: string, password: string) {
+export async function login(usernameOrEmail: string, password: string) {
+  const value = usernameOrEmail.trim();
+  const body = value.includes('@')
+    ? { email: value.toLowerCase(), password }
+    : { username: value.toLowerCase(), password };
+
   const data = await api<LoginResponse>('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify(body),
   });
   setTokens(data.accessToken, data.refreshToken);
   localStorage.setItem('imms_user', JSON.stringify(data.user));

@@ -98,6 +98,17 @@ export class MealsController {
     return this.meals.todayStats(user, organizationId);
   }
 
+  /** One-by-one student meal profile: days, weeks, sessions, timestamps. */
+  @Get('profile/:studentKey')
+  @RequirePermissions('Meal.View')
+  studentProfile(
+    @CurrentUser() user: AuthUser,
+    @Param('studentKey') studentKey: string,
+    @Query('organizationId') organizationId?: string,
+  ) {
+    return this.meals.studentProfile(user, studentKey, organizationId);
+  }
+
   @Get('history')
   @RequirePermissions('Meal.View')
   history(

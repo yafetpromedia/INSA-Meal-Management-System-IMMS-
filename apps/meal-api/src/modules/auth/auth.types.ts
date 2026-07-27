@@ -3,7 +3,8 @@ export const ORG_SCOPE = '__org__';
 
 export type AuthUser = {
   id: string;
-  email: string;
+  username: string;
+  email: string | null;
   fullName: string;
   roles: string[];
   permissions: string[];

@@ -18,7 +18,8 @@ import { api, getActiveOrganizationId } from '@/lib/api';
 type Staff = {
   id: string;
   fullName: string;
-  email: string;
+  username: string;
+  email?: string | null;
   phone?: string | null;
   status: string;
   roles: Array<{ role: { name: string } }>;
@@ -66,6 +67,7 @@ export default function StaffPage() {
   const [editing, setEditing] = useState<Staff | null>(null);
   const [form, setForm] = useState({
     fullName: '',
+    username: '',
     email: '',
     phone: '',
     password: '',
@@ -108,6 +110,7 @@ export default function StaffPage() {
     setShowPassword(true);
     setForm({
       fullName: '',
+      username: '',
       email: '',
       phone: '',
       password: generateTempPassword(),
@@ -123,7 +126,8 @@ export default function StaffPage() {
       ?.role.name as StaffRole | undefined;
     setForm({
       fullName: m.fullName,
-      email: m.email,
+      username: m.username,
+      email: m.email ?? '',
       phone: m.phone ?? '',
       password: '',
       roleName: role ?? 'Mentor',
@@ -150,7 +154,8 @@ export default function StaffPage() {
         await api('/mentors', {
           method: 'POST',
           body: JSON.stringify({
-            email: form.email.trim(),
+            username: form.username.trim().toLowerCase(),
+            email: form.email.trim() || undefined,
             fullName: form.fullName.trim(),
             password: form.password,
             phone: form.phone.trim() || undefined,
@@ -248,7 +253,7 @@ export default function StaffPage() {
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Email</th>
+                <th>Username</th>
                 <th>Role</th>
                 <th>Campuses</th>
                 <th>Status</th>
@@ -259,7 +264,7 @@ export default function StaffPage() {
               {items.map((m) => (
                 <tr key={m.id}>
                   <td style={{ fontWeight: 500 }}>{m.fullName}</td>
-                  <td>{m.email}</td>
+                  <td>@{m.username}</td>
                   <td>
                     {m.roles.map((r) => roleLabel(r.role.name)).join(', ') || '—'}
                   </td>
@@ -340,11 +345,19 @@ export default function StaffPage() {
             required
           />
           <Input
-            label="Email"
+            label="Username"
+            value={form.username}
+            onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
+            required
+            minLength={3}
+            disabled={modal === 'edit'}
+            autoComplete="off"
+          />
+          <Input
+            label="Email (optional)"
             type="email"
             value={form.email}
             onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-            required
             disabled={modal === 'edit'}
           />
           {modal === 'create' ? (
