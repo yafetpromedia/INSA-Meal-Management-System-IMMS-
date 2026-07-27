@@ -1,22 +1,38 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { FormEvent, useEffect, useState } from 'react';
 import { login } from '@/lib/api';
 import { homePathForRole, readStoredUser } from '@/lib/rbac';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useToast } from '@/components/providers/ToastProvider';
+import { BrandLogo } from '@/components/BrandLogo';
+
+const isDev = process.env.NODE_ENV === 'development';
 
 export default function LoginPage() {
-  const router = useRouter();
   const { push } = useToast();
-  const [username, setUsername] = useState('superadmin');
-  const [password, setPassword] = useState('ChangeMe!123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Already signed in → go straight to the portal
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const token =
+      localStorage.getItem('imms_access') || sessionStorage.getItem('imms_access');
+    if (!token || token === 'undefined' || token === 'null') {
+      localStorage.removeItem('imms_access');
+      localStorage.removeItem('imms_refresh');
+      sessionStorage.removeItem('imms_access');
+      sessionStorage.removeItem('imms_refresh');
+      return;
+    }
+    window.location.replace(homePathForRole(readStoredUser()));
+  }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -33,13 +49,11 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      await login(user, password);
-      if (!remember) sessionStorage.setItem('imms_remember', '0');
+      const data = await login(user, password, { remember });
       push({ kind: 'success', title: 'Signed in' });
-      router.push(homePathForRole(readStoredUser()));
+      window.location.assign(homePathForRole(data.user));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
-    } finally {
       setLoading(false);
     }
   }
@@ -47,10 +61,8 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <form className="login-card" onSubmit={onSubmit} noValidate>
-        <div className="brand">
-          <span className="brand-mark" aria-hidden>
-            IM
-          </span>
+        <div className="brand login-brand">
+          <BrandLogo variant="mark" size={56} alt="INSA" />
           <div>
             IMMS
             <span>INSA Meal Management</span>
@@ -68,7 +80,7 @@ export default function LoginPage() {
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           autoComplete="username"
-          placeholder="superadmin"
+          placeholder="Your username"
           required
         />
 
@@ -83,16 +95,18 @@ export default function LoginPage() {
 
         <label className="checkbox-row">
           <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-          Remember me
+          Remember me on this device
         </label>
 
         <Button type="submit" loading={loading}>
           Sign in
         </Button>
 
-        <p className="muted" style={{ margin: 0, fontSize: '0.8rem' }}>
-          Default admin: <strong>superadmin</strong> / <strong>ChangeMe!123</strong>
-        </p>
+        {isDev ? (
+          <p className="muted" style={{ margin: 0, fontSize: '0.8rem' }}>
+            Dev only — seed account is documented in the project README (change it before production).
+          </p>
+        ) : null}
 
         <div className="auth-links">
           <Link href="/forgot-password">Forgot password?</Link>

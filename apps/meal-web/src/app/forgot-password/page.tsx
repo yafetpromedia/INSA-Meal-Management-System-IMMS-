@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useToast } from '@/components/providers/ToastProvider';
+import { BrandLogo } from '@/components/BrandLogo';
 
 export default function ForgotPasswordPage() {
   const { push } = useToast();
@@ -40,8 +41,14 @@ export default function ForgotPasswordPage() {
   return (
     <div className="login-page">
       <form className="login-card" onSubmit={onSubmit}>
-        <h1>IMMS</h1>
-        <p>Reset your password</p>
+        <div className="brand login-brand">
+          <BrandLogo variant="mark" size={48} alt="INSA" />
+          <div>
+            IMMS
+            <span>Reset password</span>
+          </div>
+        </div>
+        <p>Enter your username or email and we will send reset instructions.</p>
         <Input
           label="Username or email"
           value={account}

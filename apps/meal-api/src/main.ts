@@ -1,13 +1,37 @@
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { ValidationPipe, VersioningType, UnprocessableEntityException } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { UnprocessableEntityException } from '@nestjs/common';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const isProd = process.env.NODE_ENV === 'production';
+
+  // Trust reverse proxy for correct client IP (throttling / audit)
+  const expressApp = app.getHttpAdapter().getInstance();
+  if (typeof expressApp?.set === 'function') {
+    expressApp.set('trust proxy', 1);
+  }
+
+  app.use(json({ limit: '1mb' }));
+  app.use(urlencoded({ extended: true, limit: '1mb' }));
+
+  // Lightweight security headers (no extra dependency)
+  app.use((_req: unknown, res: { setHeader: (k: string, v: string) => void }, next: () => void) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('X-XSS-Protection', '0');
+    res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');
+    if (isProd) {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    next();
+  });
+
   app.setGlobalPrefix('api');
   app.enableVersioning({
     type: VersioningType.URI,
@@ -36,8 +60,8 @@ async function bootstrap() {
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new ResponseEnvelopeInterceptor(app.get(Reflector)));
 
-  const swaggerEnabled =
-    process.env.SWAGGER_ENABLED === 'true' || process.env.NODE_ENV !== 'production';
+  // Swagger only when explicitly enabled AND not production
+  const swaggerEnabled = process.env.SWAGGER_ENABLED === 'true' && !isProd;
   if (swaggerEnabled) {
     const config = new DocumentBuilder()
       .setTitle('INSA Meal Management System API')
@@ -47,6 +71,13 @@ async function bootstrap() {
       .build();
     const document = SwaggerModule.createDocument(app, config);
     SwaggerModule.setup('api/docs', app, document);
+  }
+
+  if (isProd) {
+    const secret = process.env.JWT_ACCESS_SECRET ?? '';
+    if (secret.length < 32) {
+      throw new Error('JWT_ACCESS_SECRET must be at least 32 characters in production');
+    }
   }
 
   const port = Number(process.env.PORT ?? 4000);

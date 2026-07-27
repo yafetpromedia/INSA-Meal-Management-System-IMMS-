@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Bell,
   Building2,
   CalendarDays,
   ClipboardList,
@@ -29,6 +28,8 @@ import { clearTokens } from '@/lib/api';
 import { homePathForRole, readStoredUser, type ImmsUser } from '@/lib/rbac';
 import { useTheme } from '@/components/providers/ThemeProvider';
 import { Button } from '@/components/ui/Button';
+import { NotificationBell } from '@/components/NotificationBell';
+import { BrandLogo } from '@/components/BrandLogo';
 
 type NavItem = {
   href: string;
@@ -176,7 +177,11 @@ const NAV: NavItem[] = [
 
 function canAccessPath(user: ImmsUser | null, pathname: string) {
   if ((user?.roles ?? []).includes('SuperAdmin')) return true;
-  const item = NAV.find((n) => pathname === n.href || pathname.startsWith(`${n.href}/`));
+  // Prefer the longest matching route so /students/[id] maps to Students, not a shorter prefix.
+  const matches = NAV.filter(
+    (n) => pathname === n.href || pathname.startsWith(`${n.href}/`),
+  ).sort((a, b) => b.href.length - a.href.length);
+  const item = matches[0];
   if (!item) return true;
   const roles = user?.roles ?? [];
   return item.roles.some((r) => roles.includes(r));
@@ -238,9 +243,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <aside className={`sidebar ${navOpen ? 'open' : ''}`} aria-label="Main navigation">
         <div className="brand">
-          <span className="brand-mark" aria-hidden>
-            IM
-          </span>
+          <BrandLogo variant="mark" size={40} alt="INSA" />
           <div>
             IMMS
             <span>Meal Management</span>
@@ -298,9 +301,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </form>
 
           <div className="topbar-actions">
-            <button type="button" className="icon-btn" aria-label="Notifications" title="Notifications">
-              <Bell aria-hidden />
-            </button>
+            <NotificationBell />
             <button
               type="button"
               className="icon-btn"

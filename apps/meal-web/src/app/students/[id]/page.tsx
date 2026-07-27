@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { api, getActiveOrganizationId } from '@/lib/api';
-import { APP_TIMEZONE, APP_TIMEZONE_LABEL } from '@/lib/timezone';
+import { APP_TIMEZONE, formatEthiopiaTime } from '@/lib/timezone';
 
 type MealProfile = {
   student: {
@@ -65,18 +65,12 @@ function formatDate(value: string) {
 }
 
 function formatTime(value: string) {
-  return new Date(value).toLocaleTimeString('en-GB', {
-    timeZone: APP_TIMEZONE,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true,
-  });
+  return formatEthiopiaTime(new Date(value), { withSeconds: true });
 }
 
 function formatDateTime(value: string | null) {
   if (!value) return '—';
-  return `${formatDate(value)} · ${formatTime(value)} ${APP_TIMEZONE_LABEL}`;
+  return `${formatDate(value)} · ${formatTime(value)}`;
 }
 
 const WEEKDAY_ORDER = [
@@ -136,7 +130,7 @@ export default function StudentMealProfilePage() {
             Students
           </Link>
           <h1 className="page-title">Student meal profile</h1>
-          <p className="page-sub">Days eaten, sessions, weeks, and exact serve times (EAT).</p>
+          <p className="page-sub">Days eaten, sessions, weeks, and exact serve times (Ethiopian local).</p>
         </div>
         <Button type="button" variant="secondary" onClick={() => router.push('/students')}>
           Back
@@ -169,8 +163,13 @@ export default function StudentMealProfilePage() {
                 <h2>{profile.student.fullName}</h2>
                 <p className="muted">
                   {profile.student.studentId}
-                  <span aria-hidden> · </span>
-                  {profile.student.barcode}
+                  {profile.student.barcode &&
+                  profile.student.barcode !== profile.student.studentId ? (
+                    <>
+                      <span aria-hidden> · </span>
+                      {profile.student.barcode}
+                    </>
+                  ) : null}
                 </p>
                 <div className="meal-chips" style={{ marginTop: 10 }}>
                   <StatusChip tone={profile.student.status === 'ACTIVE' ? 'success' : 'warning'}>
@@ -317,7 +316,7 @@ export default function StudentMealProfilePage() {
           <section className="panel">
             <h3 className="profile-section-title">Meal timeline</h3>
             <p className="muted" style={{ marginTop: 0, marginBottom: 12, fontSize: '0.8125rem' }}>
-              Each serve with date, clock time ({APP_TIMEZONE_LABEL}), session, and week.
+              Each serve with date, Ethiopian local clock, session, and week.
             </p>
             {profile.meals.length === 0 ? (
               <EmptyState title="No meals recorded for this student" />
@@ -341,10 +340,7 @@ export default function StudentMealProfilePage() {
                       <tr key={m.id}>
                         <td className="muted">{profile.meals.length - index}</td>
                         <td>{formatDate(m.mealDate)}</td>
-                        <td>
-                          {formatTime(m.servedAt)}{' '}
-                          <span className="muted">{APP_TIMEZONE_LABEL}</span>
-                        </td>
+                        <td>{formatTime(m.servedAt)}</td>
                         <td>
                           <StatusChip tone="info">{m.mealCode}</StatusChip>
                         </td>

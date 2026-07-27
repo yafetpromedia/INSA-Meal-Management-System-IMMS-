@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/providers/ToastProvider';
+import { BrandLogo, cacheBrandingLogoUrl } from '@/components/BrandLogo';
 import { api, getActiveOrganizationId } from '@/lib/api';
 
 type Setting = {
@@ -175,12 +176,14 @@ export default function SettingsPage() {
     });
 
     const brandObj = asObject(map['settings.branding']);
+    const logoUrl = asString(brandObj.logoUrl, BRANDING_DEFAULT.logoUrl);
     setBranding({
       accentColor: asString(brandObj.accentColor, BRANDING_DEFAULT.accentColor),
-      logoUrl: asString(brandObj.logoUrl, BRANDING_DEFAULT.logoUrl),
+      logoUrl,
       faviconUrl: asString(brandObj.faviconUrl, BRANDING_DEFAULT.faviconUrl),
       supportEmail: asString(brandObj.supportEmail, BRANDING_DEFAULT.supportEmail),
     });
+    cacheBrandingLogoUrl(logoUrl);
   }, []);
 
   const load = useCallback(async () => {
@@ -258,6 +261,7 @@ export default function SettingsPage() {
 
   function onSaveBranding(e: FormEvent) {
     e.preventDefault();
+    cacheBrandingLogoUrl(branding.logoUrl);
     void saveKeys([{ key: 'settings.branding', value: branding }]);
   }
 
@@ -404,8 +408,12 @@ export default function SettingsPage() {
               label="Logo URL"
               value={branding.logoUrl}
               onChange={(e) => setBranding((b) => ({ ...b, logoUrl: e.target.value }))}
-              placeholder="https://…"
+              placeholder="Leave empty to use bundled INSA logo"
             />
+            <div className="settings-logo-preview">
+              <span className="muted">Preview</span>
+              <BrandLogo variant="mark" size={48} />
+            </div>
             <Input
               label="Favicon URL"
               value={branding.faviconUrl}

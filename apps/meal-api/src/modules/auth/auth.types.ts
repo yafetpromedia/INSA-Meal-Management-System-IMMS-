@@ -52,6 +52,44 @@ export function assertOrgAccess(user: AuthUser, organizationId: string): boolean
   return user.isSuperAdmin || user.organizationIds.includes(organizationId);
 }
 
+export function assertCampusAccess(user: AuthUser, campusId: string): boolean {
+  return user.isSuperAdmin || user.campusIds.includes(campusId);
+}
+
+export function assertProgramAccess(user: AuthUser, programId: string): boolean {
+  if (user.isSuperAdmin) return true;
+  if (user.programIds.length === 0) return true;
+  return user.programIds.includes(programId);
+}
+
+/**
+ * Resolve campus filter without letting a request campusId overwrite scope.
+ * Unauthorized requested campus → null (caller should 404).
+ */
+export function resolveCampusId(
+  user: AuthUser,
+  requestedCampusId?: string,
+): string | { in: string[] } | undefined {
+  if (requestedCampusId) {
+    if (!assertCampusAccess(user, requestedCampusId)) return undefined;
+    return requestedCampusId;
+  }
+  if (user.isSuperAdmin) return undefined;
+  return { in: user.campusIds };
+}
+
+export function resolveProgramId(
+  user: AuthUser,
+  requestedProgramId?: string,
+): string | { in: string[] } | undefined {
+  if (requestedProgramId) {
+    if (!assertProgramAccess(user, requestedProgramId)) return undefined;
+    return requestedProgramId;
+  }
+  if (user.isSuperAdmin || user.programIds.length === 0) return undefined;
+  return { in: user.programIds };
+}
+
 export function resolveActiveOrganizationId(
   user: AuthUser,
   requestedOrganizationId?: string,

@@ -70,6 +70,8 @@ function StudentsContent() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<StudentRow | null>(null);
   const [busyDelete, setBusyDelete] = useState(false);
+  const [canManage, setCanManage] = useState(false);
+  const [canImport, setCanImport] = useState(false);
   const limit = 20;
 
   async function loadMeta() {
@@ -120,6 +122,9 @@ function StudentsContent() {
       router.replace('/login');
       return;
     }
+    const user = readStoredUser();
+    setCanManage(canManageStudents(user));
+    setCanImport(canImportStudents(user));
     void loadMeta();
   }, [router]);
 
@@ -128,6 +133,16 @@ function StudentsContent() {
     void loadList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, q]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const next = draft.trim();
+      if (next === q) return;
+      setPage(1);
+      setQ(next);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [draft, q]);
 
   function openCreate() {
     setEditing(null);
@@ -228,8 +243,6 @@ function StudentsContent() {
   }
 
   const totalPages = Math.max(1, Math.ceil(total / limit) || 1);
-  const canManage = canManageStudents(readStoredUser());
-  const canImport = canImportStudents(readStoredUser());
   const canCreate = canManage && campuses.length > 0 && programs.length > 0 && years.length > 0;
 
   return (
@@ -258,8 +271,9 @@ function StudentsContent() {
         style={{ marginBottom: 16, display: 'flex', gap: 12, flexWrap: 'wrap' }}
         onSubmit={(e) => {
           e.preventDefault();
+          const next = draft.trim();
           setPage(1);
-          setQ(draft.trim());
+          setQ(next);
         }}
       >
         <input
@@ -270,7 +284,6 @@ function StudentsContent() {
           aria-label="Search students"
           style={{ flex: 1, minWidth: 220 }}
         />
-        <Button type="submit">Search</Button>
       </form>
 
       {error ? <p className="error">{error}</p> : null}

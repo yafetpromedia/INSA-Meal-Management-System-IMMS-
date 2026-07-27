@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import {
   AuthUser,
+  assertCampusAccess,
   assertOrgAccess,
   resolveActiveOrganizationId,
   scopeOrganizationFilter,
@@ -18,13 +19,19 @@ export class ProgramsService {
 
   list(user: AuthUser, campusId?: string, organizationId?: string) {
     const orgId = resolveActiveOrganizationId(user, organizationId);
+    if (campusId && !assertCampusAccess(user, campusId)) {
+      return [];
+    }
     return this.prisma.program.findMany({
       where: {
         deletedAt: null,
         ...scopeOrganizationFilter(user),
         ...(orgId ? { organizationId: orgId } : {}),
-        ...(user.isSuperAdmin ? {} : { campusId: { in: user.campusIds } }),
-        ...(campusId ? { campusId } : {}),
+        ...(user.isSuperAdmin
+          ? campusId
+            ? { campusId }
+            : {}
+          : { campusId: campusId ?? { in: user.campusIds } }),
       },
       include: { campus: true, academicYear: true, organization: true },
       orderBy: { name: 'asc' },

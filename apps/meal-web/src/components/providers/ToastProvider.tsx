@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { pushLocalNotification } from '@/lib/notifications';
 
 type ToastKind = 'success' | 'warning' | 'error' | 'info';
 
@@ -27,6 +28,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     (toast: Omit<Toast, 'id'>) => {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       setToasts((prev) => [...prev, { ...toast, id }]);
+      pushLocalNotification({
+        id,
+        title: toast.title,
+        message: toast.message,
+        kind: toast.kind,
+      });
       if (!toast.sticky) {
         window.setTimeout(() => dismiss(id), toast.kind === 'error' ? 6000 : 3500);
       }

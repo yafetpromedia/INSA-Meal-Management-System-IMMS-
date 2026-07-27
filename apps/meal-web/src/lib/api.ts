@@ -25,22 +25,32 @@ type ApiEnvelope<T> = {
 
 function getTokens() {
   if (typeof window === 'undefined') return { accessToken: null, refreshToken: null };
-  return {
-    accessToken: localStorage.getItem('imms_access'),
-    refreshToken: localStorage.getItem('imms_refresh'),
-  };
+  const accessToken =
+    localStorage.getItem('imms_access') || sessionStorage.getItem('imms_access');
+  const refreshToken =
+    localStorage.getItem('imms_refresh') || sessionStorage.getItem('imms_refresh');
+  return { accessToken, refreshToken };
 }
 
-export function setTokens(accessToken: string, refreshToken: string) {
-  localStorage.setItem('imms_access', accessToken);
-  localStorage.setItem('imms_refresh', refreshToken);
+export function setTokens(accessToken: string, refreshToken: string, remember = true) {
+  if (!accessToken || !refreshToken || accessToken === 'undefined' || refreshToken === 'undefined') {
+    throw new Error('Invalid session tokens');
+  }
+  clearTokens();
+  const store = remember ? localStorage : sessionStorage;
+  store.setItem('imms_access', accessToken);
+  store.setItem('imms_refresh', refreshToken);
 }
 
 export function clearTokens() {
-  localStorage.removeItem('imms_access');
-  localStorage.removeItem('imms_refresh');
-  localStorage.removeItem('imms_user');
-  localStorage.removeItem('imms_org');
+  if (typeof window === 'undefined') return;
+  for (const store of [localStorage, sessionStorage]) {
+    store.removeItem('imms_access');
+    store.removeItem('imms_refresh');
+    store.removeItem('imms_user');
+    store.removeItem('imms_org');
+    store.removeItem('imms_remember');
+  }
 }
 
 function unwrap<T>(payload: T | ApiEnvelope<T>): T {
@@ -77,11 +87,12 @@ async function refreshAccessToken(): Promise<boolean> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken }),
       });
-      const payload = await res.json().catch(() => ({}));
       if (!res.ok) return false;
-      const data = unwrap<{ accessToken: string; refreshToken: string }>(payload);
+      const payload = await res.json();
+      const data = unwrap<LoginResponse>(payload);
       if (!data?.accessToken || !data?.refreshToken) return false;
-      setTokens(data.accessToken, data.refreshToken);
+      const remember = !sessionStorage.getItem('imms_access');
+      setTokens(data.accessToken, data.refreshToken, remember);
       return true;
     } catch {
       return false;
@@ -120,7 +131,11 @@ export async function api<T>(path: string, options: RequestInit = {}, retried = 
   return unwrap<T>(payload);
 }
 
-export async function login(usernameOrEmail: string, password: string) {
+export async function login(
+  usernameOrEmail: string,
+  password: string,
+  opts: { remember?: boolean } = {},
+) {
   const value = usernameOrEmail.trim();
   const body = value.includes('@')
     ? { email: value.toLowerCase(), password }
@@ -130,25 +145,45 @@ export async function login(usernameOrEmail: string, password: string) {
     method: 'POST',
     body: JSON.stringify(body),
   });
-  setTokens(data.accessToken, data.refreshToken);
-  localStorage.setItem('imms_user', JSON.stringify(data.user));
-  if (data.user.defaultOrganizationId) {
-    localStorage.setItem('imms_org', data.user.defaultOrganizationId);
-  } else if (data.user.organizationIds?.[0]) {
-    localStorage.setItem('imms_org', data.user.organizationIds[0]);
+
+  if (!data?.accessToken || !data?.refreshToken || !data?.user) {
+    throw new Error('Login succeeded but session data was incomplete. Please try again.');
+  }
+
+  const remember = opts.remember !== false;
+  setTokens(data.accessToken, data.refreshToken, remember);
+  const store = remember ? localStorage : sessionStorage;
+  store.setItem('imms_user', JSON.stringify(data.user));
+  const orgId = data.user.defaultOrganizationId ?? data.user.organizationIds?.[0] ?? null;
+  if (orgId) {
+    // Always keep org in localStorage for convenience across tabs when remembered;
+    // for session-only login, keep it in sessionStorage.
+    store.setItem('imms_org', orgId);
   }
   return data;
 }
 
 export function getActiveOrganizationId(): string | null {
   if (typeof window === 'undefined') return null;
-  const stored = localStorage.getItem('imms_org');
-  if (stored) return stored;
+  const stored = localStorage.getItem('imms_org') || sessionStorage.getItem('imms_org');
+  if (stored) {
+    try {
+      const userRaw = localStorage.getItem('imms_user') || sessionStorage.getItem('imms_user');
+      const user = userRaw ? (JSON.parse(userRaw) as LoginResponse['user']) : null;
+      if (user?.organizationIds?.length && !user.organizationIds.includes(stored)) {
+        // Client-trusted org must belong to the signed-in user
+        const fallback = user.defaultOrganizationId ?? user.organizationIds[0] ?? null;
+        return fallback;
+      }
+    } catch {
+      /* ignore */
+    }
+    return stored;
+  }
   try {
-    const user = JSON.parse(localStorage.getItem('imms_user') ?? 'null') as LoginResponse['user'] | null;
-    const fallback = user?.defaultOrganizationId ?? user?.organizationIds?.[0] ?? null;
-    if (fallback) localStorage.setItem('imms_org', fallback);
-    return fallback;
+    const userRaw = localStorage.getItem('imms_user') || sessionStorage.getItem('imms_user');
+    const user = userRaw ? (JSON.parse(userRaw) as LoginResponse['user']) : null;
+    return user?.defaultOrganizationId ?? user?.organizationIds?.[0] ?? null;
   } catch {
     return null;
   }

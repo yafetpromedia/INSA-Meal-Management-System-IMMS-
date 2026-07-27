@@ -18,7 +18,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/Button';
 import { api, getActiveOrganizationId } from '@/lib/api';
 import { homePathForRole, readStoredUser } from '@/lib/rbac';
-import { APP_TIMEZONE_LABEL, formatEthiopiaTime } from '@/lib/timezone';
+import { formatEthiopiaTime } from '@/lib/timezone';
 
 type Summary = {
   totalStudents: number;
@@ -90,7 +90,7 @@ function pct(part: number, total: number) {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const user = readStoredUser();
+  const [user, setUser] = useState<ReturnType<typeof readStoredUser>>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [error, setError] = useState('');
@@ -98,6 +98,7 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [clock, setClock] = useState('');
   const [hour, setHour] = useState(12);
+  const [mounted, setMounted] = useState(false);
 
   const load = useCallback(async (soft = false) => {
     if (soft) setRefreshing(true);
@@ -121,6 +122,8 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    setUser(readStoredUser());
+    setMounted(true);
     if (!localStorage.getItem('imms_access')) {
       router.replace('/login');
       return;
@@ -146,7 +149,9 @@ export default function DashboardPage() {
   }, []);
 
   const SessionIcon = sessionIcon(summary?.currentMealSession ?? null);
-  const firstName = user?.fullName?.split(' ')[0] ?? 'there';
+  // Keep SSR/client first paint identical — personalize only after mount
+  const firstName = mounted ? (user?.fullName?.split(' ')[0] ?? 'there') : 'there';
+  const greeting = mounted ? greetingForHour(hour) : 'Welcome';
   const live = Boolean(summary?.currentMealSession);
 
   const currentServed = useMemo(() => {
@@ -173,12 +178,12 @@ export default function DashboardPage() {
       <div className="dash">
         <header className="dash-head">
           <div>
-            <p className="dash-kicker">
-              {greetingForHour(hour)}, {firstName}
+            <p className="dash-kicker" suppressHydrationWarning>
+              {greeting}, {firstName}
             </p>
             <h1 className="page-title">Dashboard</h1>
-            <p className="page-sub dash-sub">
-              Live meal operations · {clock} {APP_TIMEZONE_LABEL}
+            <p className="page-sub dash-sub" suppressHydrationWarning>
+              Live meal operations · {mounted && clock ? clock : 'local time'}
               {summary?.currentAcademicYear ? ` · ${summary.currentAcademicYear}` : ''}
             </p>
           </div>
@@ -357,13 +362,7 @@ export default function DashboardPage() {
                         );
                       })()}
                       <time className="muted">
-                        {item.timestamp
-                          ? formatEthiopiaTime(new Date(item.timestamp), {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              hour12: false,
-                            })
-                          : ''}
+                        {item.timestamp ? formatEthiopiaTime(new Date(item.timestamp)) : ''}
                       </time>
                     </div>
                   </li>

@@ -14,7 +14,7 @@ import { Modal } from '@/components/ui/Modal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/providers/ToastProvider';
 import { api, getActiveOrganizationId } from '@/lib/api';
-import { APP_TIMEZONE_LABEL, formatSessionWindow } from '@/lib/timezone';
+import { formatEthiopianClock, formatSessionWindow } from '@/lib/timezone';
 
 type Session = {
   id: string;
@@ -173,7 +173,9 @@ export default function MealSessionsPage() {
       <div className="page-head">
         <div>
           <h1 className="page-title">Meal Sessions</h1>
-          <p className="page-sub">Breakfast, lunch, and dinner windows in Ethiopia time (EAT).</p>
+          <p className="page-sub">
+            Breakfast, lunch, and dinner in Ethiopian 12-hour time (Western − 6h).
+          </p>
         </div>
         <AddButton onClick={openCreate} label="Add" />
       </div>
@@ -258,19 +260,25 @@ export default function MealSessionsPage() {
             required
           />
           <Input
-            label={`Start time (${APP_TIMEZONE_LABEL})`}
+            label="Start time (Western EAT 24h)"
             type="time"
             value={form.startTime}
             onChange={(e) => setForm((f) => ({ ...f, startTime: e.target.value }))}
             required
           />
+          <p className="muted" style={{ margin: '-4px 0 0', fontSize: '0.8125rem' }}>
+            Local: {formatEthiopianClock(form.startTime || '00:00')}
+          </p>
           <Input
-            label={`End time (${APP_TIMEZONE_LABEL})`}
+            label="End time (Western EAT 24h)"
             type="time"
             value={form.endTime}
             onChange={(e) => setForm((f) => ({ ...f, endTime: e.target.value }))}
             required
           />
+          <p className="muted" style={{ margin: '-4px 0 0', fontSize: '0.8125rem' }}>
+            Local: {formatEthiopianClock(form.endTime || '00:00')}
+          </p>
           <Input
             label="Grace period (minutes)"
             type="number"

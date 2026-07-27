@@ -19,6 +19,10 @@ const sans = Source_Sans_3({
 export const metadata: Metadata = {
   title: 'IMMS — INSA Meal Management System',
   description: 'Multi-campus meal distribution and verification for training programs',
+  icons: {
+    icon: '/brand/insa-mark.png',
+    apple: '/brand/insa-mark.png',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

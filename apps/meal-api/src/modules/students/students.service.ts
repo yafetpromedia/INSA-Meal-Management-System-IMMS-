@@ -4,11 +4,13 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import {
   AuthUser,
+  assertCampusAccess,
   assertOrgAccess,
+  assertProgramAccess,
   resolveActiveOrganizationId,
-  scopeCampusFilter,
+  resolveCampusId,
+  resolveProgramId,
   scopeOrganizationFilter,
-  scopeProgramFilter,
 } from '../auth/auth.types';
 
 @Injectable()
@@ -36,6 +38,17 @@ export class StudentsService {
     },
   ) {
     const orgId = resolveActiveOrganizationId(user, query.organizationId);
+    if (query.organizationId && !orgId) {
+      throw new NotFoundException('Organization not found');
+    }
+    const campusFilter = resolveCampusId(user, query.campusId);
+    if (query.campusId && campusFilter === undefined && !user.isSuperAdmin) {
+      throw new NotFoundException('Campus not found');
+    }
+    const programFilter = resolveProgramId(user, query.programId);
+    if (query.programId && programFilter === undefined && !user.isSuperAdmin) {
+      throw new NotFoundException('Program not found');
+    }
     const skip = query.skip ?? 0;
     const take = Math.min(query.take ?? query.limit ?? 20, 200);
     const page = query.page ?? Math.floor(skip / take) + 1;
@@ -51,11 +64,9 @@ export class StudentsService {
     const where = {
       deletedAt: null,
       ...scopeOrganizationFilter(user),
-      ...scopeCampusFilter(user),
-      ...scopeProgramFilter(user),
       ...(orgId ? { organizationId: orgId } : {}),
-      ...(query.campusId ? { campusId: query.campusId } : {}),
-      ...(query.programId ? { programId: query.programId } : {}),
+      ...(campusFilter !== undefined ? { campusId: campusFilter } : {}),
+      ...(programFilter !== undefined ? { programId: programFilter } : {}),
       ...(query.department ? { department: query.department } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.search
@@ -142,15 +153,56 @@ export class StudentsService {
 
   async getByBarcode(user: AuthUser, barcode: string, organizationId?: string) {
     const orgId = resolveActiveOrganizationId(user, organizationId);
-    const student = await this.prisma.student.findFirst({
+    const scope = {
+      deletedAt: null as null,
+      ...(orgId ? { organizationId: orgId } : {}),
+      ...scopeOrganizationFilter(user),
+    };
+    const include = {
+      campus: true,
+      program: true,
+      academicYear: true,
+      organization: true,
+    } as const;
+
+    let student = await this.prisma.student.findFirst({
       where: {
-        barcode,
-        deletedAt: null,
-        ...(orgId ? { organizationId: orgId } : {}),
-        ...scopeOrganizationFilter(user),
+        ...scope,
+        OR: [{ barcode }, { studentId: barcode }],
       },
-      include: { campus: true, program: true, academicYear: true, organization: true },
+      include,
     });
+
+    if (!student) {
+      const short = barcode.trim();
+      const looksShort =
+        short.length >= 3 &&
+        short.length <= 12 &&
+        !short.includes('-') &&
+        /^[A-Za-z0-9]+$/.test(short);
+      if (looksShort) {
+        const candidates = await this.prisma.student.findMany({
+          where: {
+            ...scope,
+            OR: [
+              { studentId: { contains: `-${short}-`, mode: 'insensitive' } },
+              { barcode: { contains: `-${short}-`, mode: 'insensitive' } },
+              { studentId: { endsWith: `-${short}`, mode: 'insensitive' } },
+              { barcode: { endsWith: `-${short}`, mode: 'insensitive' } },
+            ],
+          },
+          include,
+          take: 6,
+        });
+        if (candidates.length === 1) student = candidates[0];
+        else if (candidates.length > 1) {
+          throw new BadRequestException(
+            `Multiple students match "${short}". Use the full ID.`,
+          );
+        }
+      }
+    }
+
     if (!student) throw new NotFoundException('Student Not Found');
     if (!user.isSuperAdmin && !user.campusIds.includes(student.campusId)) {
       throw new NotFoundException('Student Not Found');
@@ -183,6 +235,12 @@ export class StudentsService {
   ) {
     if (!assertOrgAccess(user, data.organizationId)) {
       throw new NotFoundException('Organization not found');
+    }
+    if (!assertCampusAccess(user, data.campusId)) {
+      throw new NotFoundException('Campus not found');
+    }
+    if (!assertProgramAccess(user, data.programId)) {
+      throw new NotFoundException('Program not found');
     }
     const campus = await this.prisma.campus.findUnique({ where: { id: data.campusId } });
     if (!campus || campus.organizationId !== data.organizationId) {

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Put, Query } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Put, Query } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { IsObject, IsOptional, IsString } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -21,12 +21,24 @@ export class PlatformConfigController {
     private readonly prisma: PrismaService,
   ) {}
 
+  private requireOrg(user: AuthUser, organizationId?: string) {
+    if (organizationId && !resolveActiveOrganizationId(user, organizationId)) {
+      throw new ForbiddenException('Organization not in your scope');
+    }
+    return resolveActiveOrganizationId(user, organizationId);
+  }
+
   @Get('modules')
   @RequirePermissions('Settings.View')
   listModules(@CurrentUser() user: AuthUser, @Query('organizationId') organizationId?: string) {
-    const orgId = resolveActiveOrganizationId(user, organizationId);
+    const orgId = this.requireOrg(user, organizationId);
+    if (!orgId) {
+      return user.isSuperAdmin
+        ? this.prisma.organizationModule.findMany({ include: { module: true }, orderBy: { module: { sortOrder: 'asc' } } })
+        : [];
+    }
     return this.prisma.organizationModule.findMany({
-      where: orgId ? { organizationId: orgId } : undefined,
+      where: { organizationId: orgId },
       include: { module: true },
       orderBy: { module: { sortOrder: 'asc' } },
     });
@@ -39,17 +51,21 @@ export class PlatformConfigController {
     @Query('category') category: string,
     @Query('organizationId') organizationId?: string,
   ) {
-    const orgId = resolveActiveOrganizationId(user, organizationId);
+    const orgId = this.requireOrg(user, organizationId);
     return this.config.listReferenceItems(category, orgId);
   }
 
   @Get('rules')
   @RequirePermissions('Settings.View')
-  rules(@Query('organizationId') organizationId?: string) {
+  rules(@CurrentUser() user: AuthUser, @Query('organizationId') organizationId?: string) {
+    const orgId = this.requireOrg(user, organizationId);
+    if (!orgId && !user.isSuperAdmin) {
+      throw new ForbiddenException('Organization context required');
+    }
     return this.prisma.businessRule.findMany({
-      where: organizationId
-        ? { OR: [{ scopeKey: organizationId }, { scopeKey: '__platform__' }] }
-        : undefined,
+      where: orgId
+        ? { OR: [{ scopeKey: orgId }, { scopeKey: '__platform__' }] }
+        : { scopeKey: '__platform__' },
       orderBy: { key: 'asc' },
     });
   }
@@ -57,23 +73,28 @@ export class PlatformConfigController {
   @Put('settings')
   @RequirePermissions('Settings.Manage')
   upsertSetting(@CurrentUser() user: AuthUser, @Body() dto: UpsertDto) {
-    const orgId = dto.organizationId
-      ? resolveActiveOrganizationId(user, dto.organizationId)
-      : null;
-    return this.config.upsertSetting(
-      dto.key,
-      dto.value as Prisma.InputJsonValue,
-      user.isSuperAdmin ? orgId : resolveActiveOrganizationId(user, dto.organizationId),
-      user.id,
-    );
+    if (user.isSuperAdmin && !dto.organizationId) {
+      return this.config.upsertSetting(dto.key, dto.value as Prisma.InputJsonValue, null, user.id);
+    }
+    const orgId = this.requireOrg(user, dto.organizationId);
+    if (!orgId) throw new ForbiddenException('Organization context required');
+    return this.config.upsertSetting(dto.key, dto.value as Prisma.InputJsonValue, orgId, user.id);
   }
 
   @Put('rules')
   @RequirePermissions('Settings.Manage')
   upsertRule(@CurrentUser() user: AuthUser, @Body() dto: UpsertDto) {
-    const orgId = user.isSuperAdmin
-      ? (dto.organizationId ?? null)
-      : resolveActiveOrganizationId(user, dto.organizationId);
+    if (user.isSuperAdmin && !dto.organizationId) {
+      return this.config.upsertRule(
+        dto.key,
+        dto.value as Prisma.InputJsonValue,
+        null,
+        dto.description,
+        user.id,
+      );
+    }
+    const orgId = this.requireOrg(user, dto.organizationId);
+    if (!orgId) throw new ForbiddenException('Organization context required');
     return this.config.upsertRule(
       dto.key,
       dto.value as Prisma.InputJsonValue,
@@ -90,7 +111,7 @@ export class PlatformConfigController {
     @Query('entityType') entityType: string,
     @Query('organizationId') organizationId?: string,
   ) {
-    const orgId = resolveActiveOrganizationId(user, organizationId);
+    const orgId = this.requireOrg(user, organizationId);
     if (!orgId) return [];
     return this.prisma.customFieldDefinition.findMany({
       where: { organizationId: orgId, entityType, isActive: true },

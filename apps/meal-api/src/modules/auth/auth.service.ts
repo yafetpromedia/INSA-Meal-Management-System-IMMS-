@@ -59,7 +59,7 @@ export class AuthService {
 
     if (user.status === AccountStatus.LOCKED) {
       if (user.lockedUntil && user.lockedUntil > new Date()) {
-        throw new UnauthorizedException('Account is locked. Try again later.');
+        throw new UnauthorizedException('Invalid username or password');
       }
       await this.prisma.user.update({
         where: { id: user.id },
@@ -72,7 +72,7 @@ export class AuthService {
       user.status === AccountStatus.SUSPENDED ||
       user.status === AccountStatus.PENDING_ACTIVATION
     ) {
-      throw new UnauthorizedException('Account is not active');
+      throw new UnauthorizedException('Invalid username or password');
     }
 
     const valid = await argon2.verify(user.passwordHash, dto.password);

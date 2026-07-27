@@ -14,7 +14,8 @@ export type ImmsUser = {
 export function readStoredUser(): ImmsUser | null {
   if (typeof window === 'undefined') return null;
   try {
-    return JSON.parse(localStorage.getItem('imms_user') ?? 'null') as ImmsUser | null;
+    const raw = localStorage.getItem('imms_user') || sessionStorage.getItem('imms_user');
+    return JSON.parse(raw ?? 'null') as ImmsUser | null;
   } catch {
     return null;
   }

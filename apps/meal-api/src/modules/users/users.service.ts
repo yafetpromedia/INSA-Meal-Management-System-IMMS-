@@ -150,7 +150,8 @@ export class UsersService {
       },
     });
 
-    return created;
+    const { passwordHash: _omit, ...safe } = created as typeof created & { passwordHash?: string };
+    return safe;
   }
 
   async assignRole(actor: AuthUser, userId: string, roleName: string, organizationId?: string) {
@@ -183,16 +184,40 @@ export class UsersService {
     return { success: true };
   }
 
-  async setStatus(actor: AuthUser, userId: string, status: AccountStatus) {
-    const target = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { roles: { include: { role: true } } },
+  private async assertCanManageUser(actor: AuthUser, userId: string) {
+    const target = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      include: {
+        roles: { include: { role: true } },
+        organizationAssignments: true,
+      },
     });
     if (!target) throw new NotFoundException('User not found');
     if (target.roles.some((r) => r.role.name === 'SuperAdmin') && !actor.isSuperAdmin) {
       throw new ForbiddenException('Cannot modify Super Admin');
     }
-    return this.prisma.user.update({ where: { id: userId }, data: { status } });
+    if (!actor.isSuperAdmin) {
+      const overlap = target.organizationAssignments.some((a) =>
+        actor.organizationIds.includes(a.organizationId),
+      );
+      if (!overlap) throw new NotFoundException('User not found');
+    }
+    return target;
+  }
+
+  async setStatus(actor: AuthUser, userId: string, status: AccountStatus) {
+    await this.assertCanManageUser(actor, userId);
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { status },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        fullName: true,
+        status: true,
+      },
+    });
   }
 
   async updateProfile(
@@ -200,14 +225,7 @@ export class UsersService {
     userId: string,
     data: Partial<{ fullName: string; phone: string }>,
   ) {
-    const target = await this.prisma.user.findFirst({
-      where: { id: userId, deletedAt: null },
-      include: { roles: { include: { role: true } } },
-    });
-    if (!target) throw new NotFoundException('User not found');
-    if (target.roles.some((r) => r.role.name === 'SuperAdmin') && !actor.isSuperAdmin) {
-      throw new ForbiddenException('Cannot modify Super Admin');
-    }
+    await this.assertCanManageUser(actor, userId);
     return this.prisma.user.update({
       where: { id: userId },
       data,
@@ -223,14 +241,7 @@ export class UsersService {
   }
 
   async softDelete(actor: AuthUser, userId: string) {
-    const target = await this.prisma.user.findFirst({
-      where: { id: userId, deletedAt: null },
-      include: { roles: { include: { role: true } } },
-    });
-    if (!target) throw new NotFoundException('User not found');
-    if (target.roles.some((r) => r.role.name === 'SuperAdmin') && !actor.isSuperAdmin) {
-      throw new ForbiddenException('Cannot delete Super Admin');
-    }
+    const target = await this.assertCanManageUser(actor, userId);
     await this.prisma.user.update({
       where: { id: userId },
       data: { deletedAt: new Date(), status: AccountStatus.INACTIVE },

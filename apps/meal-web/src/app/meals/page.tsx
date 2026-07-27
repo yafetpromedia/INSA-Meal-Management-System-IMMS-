@@ -14,8 +14,9 @@ import { AppShell } from '@/components/AppShell';
 import { BarcodeCamera } from '@/components/BarcodeCamera';
 import { StatusChip } from '@/components/ui/Badge';
 import { api, getActiveOrganizationId } from '@/lib/api';
+import { pushLocalNotification } from '@/lib/notifications';
 import { playError, playSuccess, playWarning } from '@/lib/sounds';
-import { APP_TIMEZONE_LABEL, formatEthiopiaTime } from '@/lib/timezone';
+import { formatEthiopiaTime } from '@/lib/timezone';
 
 type Student = {
   id: string;
@@ -82,11 +83,7 @@ function initials(name: string) {
 }
 
 function clockShort() {
-  return formatEthiopiaTime(new Date(), {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
+  return formatEthiopiaTime();
 }
 
 export default function MealsPage() {
@@ -182,6 +179,12 @@ export default function MealsPage() {
         });
         playSuccess();
         const time = clockShort();
+        pushLocalNotification({
+          kind: 'success',
+          title: 'Meal served',
+          message: `${student.fullName} · ${mealSession ?? currentMeal ?? 'Meal'}`,
+          href: '/meals',
+        });
         setGate({
           kind: 'success',
           name: student.fullName,
@@ -201,6 +204,12 @@ export default function MealsPage() {
         const message = err instanceof Error ? err.message : 'Serve failed';
         if (message.toLowerCase().includes('duplicate')) {
           playWarning();
+          pushLocalNotification({
+            kind: 'warning',
+            title: 'Duplicate scan blocked',
+            message: student.fullName,
+            href: '/meals',
+          });
           setGate({
             kind: 'duplicate',
             student,
@@ -217,6 +226,12 @@ export default function MealsPage() {
           scheduleClear(1600);
         } else {
           playError();
+          pushLocalNotification({
+            kind: 'error',
+            title: 'Serve failed',
+            message,
+            href: '/meals',
+          });
           setGate({ kind: 'blocked', student, message });
           pushRecent({
             name: student.fullName,
@@ -253,6 +268,12 @@ export default function MealsPage() {
 
         if (!result.eligible && result.reason?.toLowerCase().includes('duplicate')) {
           playWarning();
+          pushLocalNotification({
+            kind: 'warning',
+            title: 'Duplicate scan blocked',
+            message: result.student.fullName,
+            href: '/meals',
+          });
           setGate({
             kind: 'duplicate',
             student: result.student,
@@ -272,6 +293,12 @@ export default function MealsPage() {
 
         if (!result.eligible) {
           playWarning();
+          pushLocalNotification({
+            kind: 'warning',
+            title: 'Not eligible',
+            message: `${result.student.fullName} · ${result.reason ?? 'Blocked'}`,
+            href: '/meals',
+          });
           setGate({
             kind: 'blocked',
             student: result.student,
@@ -297,6 +324,12 @@ export default function MealsPage() {
       } catch (err) {
         playError();
         const message = err instanceof Error ? err.message : 'Student Not Found';
+        pushLocalNotification({
+          kind: 'error',
+          title: 'Student not found',
+          message: code,
+          href: '/meals',
+        });
         setGate({
           kind: 'not_found',
           code,
@@ -344,9 +377,7 @@ export default function MealsPage() {
             </div>
             <div className="meal-pill">
               <Clock size={14} strokeWidth={1.75} aria-hidden />
-              <span className="meal-clock">
-                {clock} {APP_TIMEZONE_LABEL}
-              </span>
+              <span className="meal-clock">{clock || '—'}</span>
             </div>
           </div>
         </header>
@@ -371,14 +402,14 @@ export default function MealsPage() {
                 className="barcode-input"
                 value={barcode}
                 onChange={(e) => setBarcode(e.target.value)}
-                placeholder="Scan or type student ID, then Enter"
+                placeholder="Full ID or short number (e.g. 1900)"
                 autoComplete="off"
                 autoFocus
                 aria-label="Barcode scanner input"
                 disabled={busy || popupOpen}
               />
               <p className="meal-hint muted">
-                Eligible students are served automatically — ready for the next scan
+                Type CTC-1900-26 or just 1900 — eligible meals serve automatically
               </p>
             </form>
 

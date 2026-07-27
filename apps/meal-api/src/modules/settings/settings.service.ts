@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ConfigResolutionService } from '../config/config-resolution.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -12,11 +12,21 @@ export class SettingsService {
   ) {}
 
   list(user: AuthUser, organizationId?: string) {
+    if (organizationId && !resolveActiveOrganizationId(user, organizationId)) {
+      throw new NotFoundException('Organization not found');
+    }
     const orgId = resolveActiveOrganizationId(user, organizationId);
+    if (!orgId && !user.isSuperAdmin) {
+      throw new ForbiddenException('Organization context required');
+    }
+    if (!orgId && user.isSuperAdmin) {
+      return this.prisma.systemSetting.findMany({
+        where: { scopeKey: '__platform__' },
+        orderBy: { key: 'asc' },
+      });
+    }
     return this.prisma.systemSetting.findMany({
-      where: orgId
-        ? { OR: [{ scopeKey: orgId }, { scopeKey: '__platform__' }] }
-        : undefined,
+      where: { OR: [{ scopeKey: orgId! }, { scopeKey: '__platform__' }] },
       orderBy: { key: 'asc' },
     });
   }
@@ -27,9 +37,13 @@ export class SettingsService {
     value: Prisma.InputJsonValue,
     organizationId?: string,
   ) {
-    const orgId = user.isSuperAdmin
-      ? (organizationId ?? null)
-      : resolveActiveOrganizationId(user, organizationId);
+    if (user.isSuperAdmin && !organizationId) {
+      return this.config.upsertSetting(key, value, null, user.id);
+    }
+    const orgId = resolveActiveOrganizationId(user, organizationId);
+    if (!orgId) {
+      throw new ForbiddenException('Organization context required');
+    }
     return this.config.upsertSetting(key, value, orgId, user.id);
   }
 }

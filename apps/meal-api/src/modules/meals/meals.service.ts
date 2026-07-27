@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { MealRecordStatus, StudentStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -11,8 +11,10 @@ import { AuditService } from '../audit/audit.service';
 import {
   AuthUser,
   ORG_SCOPE,
+  assertOrgAccess,
   hasPermission,
   resolveActiveOrganizationId,
+  resolveCampusId,
   scopeCampusFilter,
   scopeOrganizationFilter,
 } from '../auth/auth.types';
@@ -55,6 +57,9 @@ export class MealsService {
     if (!existing || existing.deletedAt) {
       throw new NotFoundException('Meal session not found');
     }
+    if (!assertOrgAccess(user, existing.organizationId)) {
+      throw new NotFoundException('Meal session not found');
+    }
     const session = await this.prisma.mealSessionConfig.update({
       where: { id },
       data,
@@ -75,6 +80,9 @@ export class MealsService {
   async softDeleteSession(user: AuthUser, id: string) {
     const existing = await this.prisma.mealSessionConfig.findUnique({ where: { id } });
     if (!existing || existing.deletedAt) {
+      throw new NotFoundException('Meal session not found');
+    }
+    if (!assertOrgAccess(user, existing.organizationId)) {
       throw new NotFoundException('Meal session not found');
     }
     await this.prisma.mealSessionConfig.update({
@@ -107,7 +115,28 @@ export class MealsService {
       isActive?: boolean;
     },
   ) {
+    if (!assertOrgAccess(user, data.organizationId)) {
+      throw new ForbiddenException('Organization not in your scope');
+    }
+    if (data.campusId) {
+      const campusFilter = resolveCampusId(user, data.campusId);
+      if (campusFilter === undefined && !user.isSuperAdmin) {
+        throw new ForbiddenException('Campus not in your scope');
+      }
+    }
     const scopeKey = data.campusId ?? ORG_SCOPE;
+    const existing = await this.prisma.mealSessionConfig.findUnique({
+      where: {
+        organizationId_scopeKey_code: {
+          organizationId: data.organizationId,
+          scopeKey,
+          code: data.code.toUpperCase(),
+        },
+      },
+    });
+    if (existing?.deletedAt) {
+      throw new BadRequestException('Session was deleted. Create a new code or restore via admin.');
+    }
     const session = await this.prisma.mealSessionConfig.upsert({
       where: {
         organizationId_scopeKey_code: {
@@ -136,7 +165,6 @@ export class MealsService {
         sortOrder: data.sortOrder,
         isActive: data.isActive ?? true,
         campusId: data.campusId,
-        deletedAt: null,
       },
     });
 
@@ -177,16 +205,80 @@ export class MealsService {
       throw new BadRequestException('barcode or studentId is required');
     }
 
-    const student = await this.prisma.student.findFirst({
+    const scope = {
+      deletedAt: null as null,
+      ...(orgId ? { organizationId: orgId } : {}),
+      ...scopeOrganizationFilter(user),
+    };
+
+    const include = { campus: true, program: true } as const;
+
+    // Internal DB id (serve after verify often sends barcode, but studentId may be cuid)
+    if (input.studentId && !input.barcode) {
+      const byPk = await this.prisma.student.findFirst({
+        where: { ...scope, id: input.studentId },
+        include,
+      });
+      if (byPk) {
+        if (!user.isSuperAdmin && !user.campusIds.includes(byPk.campusId)) {
+          throw new NotFoundException('Student Not Found');
+        }
+        return byPk;
+      }
+    }
+
+    const key = (input.barcode ?? input.studentId ?? '').trim();
+    if (!key) throw new BadRequestException('barcode or studentId is required');
+
+    // Exact studentId or barcode (full CTC-1900-26)
+    let student = await this.prisma.student.findFirst({
       where: {
-        deletedAt: null,
-        ...(input.barcode ? { barcode: input.barcode } : {}),
-        ...(input.studentId ? { id: input.studentId } : {}),
-        ...(orgId ? { organizationId: orgId } : {}),
-        ...scopeOrganizationFilter(user),
+        ...scope,
+        OR: [{ barcode: key }, { studentId: key }],
       },
-      include: { campus: true, program: true },
+      include,
     });
+
+    // Short form: type 1900 to match CTC-1900-26 (segment between dashes)
+    if (!student) {
+      const short = key.replace(/^#+/, '');
+      const looksShort =
+        short.length >= 3 &&
+        short.length <= 12 &&
+        !short.includes('-') &&
+        /^[A-Za-z0-9]+$/.test(short);
+
+      if (looksShort) {
+        const candidates = await this.prisma.student.findMany({
+          where: {
+            ...scope,
+            OR: [
+              { studentId: { contains: `-${short}-`, mode: 'insensitive' } },
+              { barcode: { contains: `-${short}-`, mode: 'insensitive' } },
+              { studentId: { endsWith: `-${short}`, mode: 'insensitive' } },
+              { barcode: { endsWith: `-${short}`, mode: 'insensitive' } },
+              { studentId: { startsWith: `${short}-`, mode: 'insensitive' } },
+              { barcode: { startsWith: `${short}-`, mode: 'insensitive' } },
+            ],
+          },
+          include,
+          take: 6,
+        });
+
+        if (candidates.length === 1) {
+          student = candidates[0];
+        } else if (candidates.length > 1) {
+          const samples = candidates
+            .slice(0, 3)
+            .map((c) => c.studentId)
+            .join(', ');
+          throw new BadRequestException(
+            `Multiple students match "${short}" (${samples}). Use the full ID.`,
+          );
+        }
+      }
+    }
+
     if (!student) throw new NotFoundException('Student Not Found');
     if (!user.isSuperAdmin && !user.campusIds.includes(student.campusId)) {
       throw new NotFoundException('Student Not Found');
@@ -275,20 +367,41 @@ export class MealsService {
       throw new BadRequestException('Student inactive');
     }
 
-    let mealCode =
-      input.mealCode?.toUpperCase() ??
-      (await this.currentMeal(student.organizationId, student.campusId));
+    const openMeal = await this.currentMeal(student.organizationId, student.campusId);
+    let mealCode = openMeal;
 
-    if (input.mealSessionId) {
-      const session = await this.prisma.mealSessionConfig.findFirst({
-        where: {
-          id: input.mealSessionId,
-          organizationId: student.organizationId,
-          deletedAt: null,
-        },
-      });
-      if (!session) throw new BadRequestException('Meal session not found');
-      mealCode = session.code;
+    // Client-supplied session only with Meal.Override (+ reason); otherwise use open window
+    if (input.mealCode || input.mealSessionId) {
+      const requested = input.mealCode?.toUpperCase();
+      if (input.mealSessionId) {
+        const session = await this.prisma.mealSessionConfig.findFirst({
+          where: {
+            id: input.mealSessionId,
+            organizationId: student.organizationId,
+            deletedAt: null,
+          },
+        });
+        if (!session) throw new BadRequestException('Meal session not found');
+        if (session.code !== openMeal) {
+          if (!input.override || !hasPermission(user, 'Meal.Override')) {
+            throw new BadRequestException('Meal session closed');
+          }
+          if (!input.overrideReason) {
+            throw new BadRequestException('Override requires a reason');
+          }
+        }
+        mealCode = session.code;
+      } else if (requested && requested !== openMeal) {
+        if (!input.override || !hasPermission(user, 'Meal.Override')) {
+          throw new BadRequestException('Meal session closed');
+        }
+        if (!input.overrideReason) {
+          throw new BadRequestException('Override requires a reason');
+        }
+        mealCode = requested;
+      } else if (requested) {
+        mealCode = requested;
+      }
     }
 
     if (!mealCode) {
@@ -408,14 +521,17 @@ export class MealsService {
     },
   ) {
     const orgId = resolveActiveOrganizationId(user, query.organizationId);
+    const campusFilter = resolveCampusId(user, query.campusId);
+    if (query.campusId && campusFilter === undefined && !user.isSuperAdmin) {
+      return { items: [], total: 0, page: 1, limit: Math.min(query.take ?? query.limit ?? 20, 200) };
+    }
     const skip = query.skip ?? 0;
     const take = Math.min(query.take ?? query.limit ?? 20, 200);
     const page = query.page ?? Math.floor(skip / take) + 1;
     const where = {
       ...scopeOrganizationFilter(user),
-      ...scopeCampusFilter(user),
       ...(orgId ? { organizationId: orgId } : {}),
-      ...(query.campusId ? { campusId: query.campusId } : {}),
+      ...(campusFilter !== undefined ? { campusId: campusFilter } : {}),
       ...(query.studentId ? { studentId: query.studentId } : {}),
       ...(query.mealCode ? { mealCode: query.mealCode } : {}),
     };
@@ -439,16 +555,20 @@ export class MealsService {
 
   /**
    * Per-student meal profile: totals, days, weeks, sessions, and full timeline.
-   * `studentKey` accepts internal id, studentId (e.g. CTC-…), or barcode.
+   * `studentKey` accepts internal id, full studentId/barcode (CTC-1900-26), or short number (1900).
    */
   async studentProfile(user: AuthUser, studentKey: string, organizationId?: string) {
     const orgId = resolveActiveOrganizationId(user, organizationId);
-    const student = await this.prisma.student.findFirst({
+    const scope = {
+      deletedAt: null as null,
+      ...scopeOrganizationFilter(user),
+      ...scopeCampusFilter(user),
+      ...(orgId ? { organizationId: orgId } : {}),
+    };
+
+    let student = await this.prisma.student.findFirst({
       where: {
-        deletedAt: null,
-        ...scopeOrganizationFilter(user),
-        ...scopeCampusFilter(user),
-        ...(orgId ? { organizationId: orgId } : {}),
+        ...scope,
         OR: [{ id: studentKey }, { studentId: studentKey }, { barcode: studentKey }],
       },
       include: {
@@ -457,6 +577,35 @@ export class MealsService {
         academicYear: true,
       },
     });
+
+    if (!student) {
+      const short = studentKey.trim();
+      const looksShort =
+        short.length >= 3 &&
+        short.length <= 12 &&
+        !short.includes('-') &&
+        /^[A-Za-z0-9]+$/.test(short);
+      if (looksShort) {
+        const candidates = await this.prisma.student.findMany({
+          where: {
+            ...scope,
+            OR: [
+              { studentId: { contains: `-${short}-`, mode: 'insensitive' } },
+              { barcode: { contains: `-${short}-`, mode: 'insensitive' } },
+            ],
+          },
+          include: { campus: true, program: true, academicYear: true },
+          take: 6,
+        });
+        if (candidates.length === 1) student = candidates[0];
+        else if (candidates.length > 1) {
+          throw new BadRequestException(
+            `Multiple students match "${short}". Use the full ID (e.g. CTC-1900-26).`,
+          );
+        }
+      }
+    }
+
     if (!student) throw new NotFoundException('Student Not Found');
 
     const meals = await this.prisma.mealRecord.findMany({

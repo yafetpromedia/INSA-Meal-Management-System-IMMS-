@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useToast } from '@/components/providers/ToastProvider';
+import { BrandLogo } from '@/components/BrandLogo';
 
 function ResetForm() {
   const router = useRouter();
@@ -46,8 +47,13 @@ function ResetForm() {
 
   return (
     <form className="login-card" onSubmit={onSubmit}>
-      <h1>IMMS</h1>
-      <p>Choose a new password</p>
+      <div className="brand login-brand">
+        <BrandLogo variant="mark" size={48} alt="INSA" />
+        <div>
+          IMMS
+          <span>Choose a new password</span>
+        </div>
+      </div>
       <Input
         label="New password"
         type="password"
