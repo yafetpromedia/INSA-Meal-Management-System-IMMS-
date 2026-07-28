@@ -180,10 +180,10 @@ export default function StudentMealProfilePage() {
                   </StatusChip>
                   <StatusChip tone="info">{profile.student.program?.name ?? 'Program'}</StatusChip>
                   {profile.student.department ? (
-                    <StatusChip tone="neutral">{profile.student.department}</StatusChip>
+                    <StatusChip tone="info">{profile.student.department}</StatusChip>
                   ) : null}
                   {profile.student.academicYear ? (
-                    <StatusChip tone="neutral">{profile.student.academicYear.name}</StatusChip>
+                    <StatusChip tone="info">{profile.student.academicYear.name}</StatusChip>
                   ) : null}
                 </div>
               </div>
