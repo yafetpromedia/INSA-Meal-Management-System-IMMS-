@@ -43,8 +43,26 @@ enum StudentStatus {
 enum MealRecordStatus {
   SERVED
   MISSED
+  /// Missed because the student was outside on an approved leave.
+  MISSED_LEAVE
   CANCELLED
   OVERRIDDEN
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CHECKED_OUT
+  RETURNED
+  OVERDUE
+  CANCELLED
+  EXPIRED
+}
+
+enum GateAction {
+  EXIT
+  RETURN
 }
 
 enum ImportMode {
@@ -99,6 +117,9 @@ model Organization {
   customFieldDefinitions CustomFieldDefinition[]
   importJobs            ImportJob[]
   mealRecords           MealRecord[]
+  leaveTypes            LeaveType[]
+  leaveRequests         LeaveRequest[]
+  gateLogs              GateLog[]
   auditLogs             AuditLog[]
   businessRules         BusinessRule[]
 }
@@ -270,6 +291,8 @@ model Campus {
   mealRecords        MealRecord[]
   mealSessionConfigs MealSessionConfig[]
   importJobs         ImportJob[]
+  leaveRequests      LeaveRequest[]
+  gateLogs           GateLog[]
 
   @@unique([organizationId, shortName])
   @@index([organizationId])
@@ -301,6 +324,7 @@ model Program {
   students          Student[]
   userAssignments   UserProgramAssignment[]
   mealRecords       MealRecord[]
+  leaveRequests     LeaveRequest[]
 
   @@unique([campusId, name, academicYearId])
   @@index([organizationId])
@@ -337,6 +361,9 @@ model User {
   importJobs              ImportJob[]
   auditLogs               AuditLog[]
   approvalsGiven          ApprovalRecord[]             @relation("ApprovalApprover")
+  leaveRequestsCreated    LeaveRequest[]               @relation("LeaveCreatedBy")
+  leaveRequestsApproved   LeaveRequest[]               @relation("LeaveApprovedBy")
+  gateLogsAsOfficer       GateLog[]                    @relation("GateOfficer")
 }
 
 model UserOrganizationAssignment {
@@ -463,6 +490,8 @@ model Student {
   program           Program            @relation(fields: [programId], references: [id])
   academicYear      AcademicYear       @relation(fields: [academicYearId], references: [id])
   mealRecords       MealRecord[]
+  leaveRequests     LeaveRequest[]
+  gateLogs          GateLog[]
 
   @@unique([organizationId, studentId])
   @@unique([organizationId, barcode])
@@ -524,6 +553,8 @@ model MealRecord {
   status         MealRecordStatus @default(SERVED)
   notes          String?
   overrideReason String?
+  /// When status is MISSED_LEAVE, links to the leave that caused the miss.
+  leaveRequestId String?
   approvedById   String?
   approvedAt     DateTime?
   createdById    String?
@@ -531,12 +562,13 @@ model MealRecord {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  student      Student      @relation(fields: [studentId], references: [id])
-  campus       Campus       @relation(fields: [campusId], references: [id])
-  program      Program      @relation(fields: [programId], references: [id])
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
-  mentor       User?        @relation("MealMentor", fields: [mentorId], references: [id])
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  student      Student       @relation(fields: [studentId], references: [id])
+  campus       Campus        @relation(fields: [campusId], references: [id])
+  program      Program       @relation(fields: [programId], references: [id])
+  academicYear AcademicYear  @relation(fields: [academicYearId], references: [id])
+  mentor       User?         @relation("MealMentor", fields: [mentorId], references: [id])
+  leaveRequest LeaveRequest? @relation(fields: [leaveRequestId], references: [id])
 
   @@unique([studentId, mealDate, mealCode])
   @@index([organizationId, mealDate])
@@ -545,6 +577,7 @@ model MealRecord {
   @@index([studentId])
   @@index([mentorId])
   @@index([mealDate])
+  @@index([leaveRequestId])
 }
 
 model ImportJob {
@@ -656,5 +689,96 @@ model SystemSetting {
 
   @@unique([scopeKey, key])
   @@index([key])
+}
+
+/// Configurable leave reasons (Church, Medical, …). Soft-disable via `active`.
+model LeaveType {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  active         Boolean   @default(true)
+  sortOrder      Int       @default(0)
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leaveRequests LeaveRequest[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([deletedAt])
+}
+
+/// Leave & gate pass request. Soft-cancel only — history is never hard-deleted.
+model LeaveRequest {
+  id                 String             @id @default(cuid())
+  organizationId     String
+  leaveNumber        String
+  studentId          String
+  campusId           String
+  programId          String
+  leaveTypeId        String
+  reason             String
+  destination        String
+  expectedExitTime   DateTime
+  expectedReturnTime DateTime
+  status             LeaveRequestStatus @default(PENDING)
+  notes              String?
+  rejectionReason    String?
+  approvedById       String?
+  approvedAt         DateTime?
+  actualExitTime     DateTime?
+  actualReturnTime   DateTime?
+  createdById        String
+  cancelledAt        DateTime?
+  cancelledById      String?
+  deletedAt          DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  student      Student      @relation(fields: [studentId], references: [id])
+  campus       Campus       @relation(fields: [campusId], references: [id])
+  program      Program      @relation(fields: [programId], references: [id])
+  leaveType    LeaveType    @relation(fields: [leaveTypeId], references: [id])
+  createdBy    User         @relation("LeaveCreatedBy", fields: [createdById], references: [id])
+  approvedBy   User?        @relation("LeaveApprovedBy", fields: [approvedById], references: [id])
+  gateLogs     GateLog[]
+  mealRecords  MealRecord[]
+
+  @@unique([organizationId, leaveNumber])
+  @@index([organizationId, status])
+  @@index([studentId, status])
+  @@index([campusId, status])
+  @@index([expectedReturnTime])
+  @@index([deletedAt])
+}
+
+/// Immutable exit/return scans at the gate.
+model GateLog {
+  id             String     @id @default(cuid())
+  organizationId String
+  leaveRequestId String
+  studentId      String
+  campusId       String?
+  action         GateAction
+  gateOfficerId  String
+  gateLocation   String?
+  scannedAt      DateTime   @default(now())
+  remarks        String?
+  createdAt      DateTime   @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leaveRequest LeaveRequest @relation(fields: [leaveRequestId], references: [id])
+  student      Student      @relation(fields: [studentId], references: [id])
+  campus       Campus?      @relation(fields: [campusId], references: [id])
+  gateOfficer  User         @relation("GateOfficer", fields: [gateOfficerId], references: [id])
+
+  @@index([organizationId, scannedAt])
+  @@index([leaveRequestId])
+  @@index([studentId, scannedAt])
+  @@index([action, scannedAt])
 }
 

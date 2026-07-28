@@ -45,6 +45,15 @@ const PERMISSIONS: Array<{ key: string; module: string; action: string }> = [
   { key: 'AuditLog.Delete', module: 'AuditLog', action: 'Delete' },
   { key: 'Settings.View', module: 'Settings', action: 'View' },
   { key: 'Settings.Manage', module: 'Settings', action: 'Manage' },
+  { key: 'Leave.View', module: 'Leave', action: 'View' },
+  { key: 'Leave.Create', module: 'Leave', action: 'Create' },
+  { key: 'Leave.Update', module: 'Leave', action: 'Update' },
+  { key: 'Leave.Approve', module: 'Leave', action: 'Approve' },
+  { key: 'Leave.Cancel', module: 'Leave', action: 'Cancel' },
+  { key: 'Leave.ManageTypes', module: 'Leave', action: 'ManageTypes' },
+  { key: 'Leave.Report', module: 'Leave', action: 'Report' },
+  { key: 'Gate.Scan', module: 'Gate', action: 'Scan' },
+  { key: 'Gate.View', module: 'Gate', action: 'View' },
 ];
 
 const ROLE_PERMISSIONS: Record<string, string[] | '*'> = {
@@ -75,6 +84,15 @@ const ROLE_PERMISSIONS: Record<string, string[] | '*'> = {
     'User.Assign',
     'AuditLog.View',
     'Settings.View',
+    'Leave.View',
+    'Leave.Create',
+    'Leave.Update',
+    'Leave.Approve',
+    'Leave.Cancel',
+    'Leave.ManageTypes',
+    'Leave.Report',
+    'Gate.Scan',
+    'Gate.View',
   ],
   CampusCoordinator: [
     'Dashboard.View',
@@ -97,6 +115,13 @@ const ROLE_PERMISSIONS: Record<string, string[] | '*'> = {
     'User.View',
     'User.Assign',
     'AuditLog.View',
+    'Leave.View',
+    'Leave.Create',
+    'Leave.Update',
+    'Leave.Approve',
+    'Leave.Cancel',
+    'Leave.Report',
+    'Gate.View',
   ],
   ProgramCoordinator: [
     'Dashboard.View',
@@ -108,6 +133,9 @@ const ROLE_PERMISSIONS: Record<string, string[] | '*'> = {
     'Student.Update',
     'Meal.View',
     'Report.View',
+    'Leave.View',
+    'Leave.Create',
+    'Leave.Report',
   ],
   Mentor: [
     'Dashboard.View',
@@ -116,8 +144,25 @@ const ROLE_PERMISSIONS: Record<string, string[] | '*'> = {
     'Meal.View',
     'Meal.Create',
     'Report.View',
+    'Leave.View',
+    'Leave.Create',
+    'Gate.View',
   ],
-  FoodStaff: ['Dashboard.View', 'Student.Search', 'Meal.View', 'Meal.Create'],
+  FoodStaff: [
+    'Dashboard.View',
+    'Student.Search',
+    'Meal.View',
+    'Meal.Create',
+    'Leave.View',
+  ],
+  GateOfficer: [
+    'Dashboard.View',
+    'Student.Search',
+    'Student.View',
+    'Leave.View',
+    'Gate.Scan',
+    'Gate.View',
+  ],
   Viewer: [
     'Dashboard.View',
     'Organization.View',
@@ -126,6 +171,9 @@ const ROLE_PERMISSIONS: Record<string, string[] | '*'> = {
     'Student.View',
     'Meal.View',
     'Report.View',
+    'Leave.View',
+    'Leave.Report',
+    'Gate.View',
   ],
 };
 
@@ -136,8 +184,22 @@ const PLATFORM_MODULES = [
   { key: 'students', name: 'Student Management', isCore: true, sortOrder: 4 },
   { key: 'meals', name: 'Meal Distribution', isCore: true, sortOrder: 5 },
   { key: 'meal_history', name: 'Meal History', isCore: true, sortOrder: 6 },
-  { key: 'reports', name: 'Reports', isCore: true, sortOrder: 7 },
-  { key: 'audit', name: 'Audit Logs', isCore: true, sortOrder: 8 },
+  { key: 'leave', name: 'Leave & Gate Pass', isCore: true, sortOrder: 7 },
+  { key: 'reports', name: 'Reports', isCore: true, sortOrder: 8 },
+  { key: 'audit', name: 'Audit Logs', isCore: true, sortOrder: 9 },
+];
+
+const DEFAULT_LEAVE_TYPES = [
+  'Church',
+  'Family Visit',
+  'Family Emergency',
+  'Buy Materials',
+  'Buy Personal Items',
+  'Medical Appointment',
+  'Official Assignment',
+  'Campus Permission',
+  'Weekend Leave',
+  'Other',
 ];
 
 async function seedReferenceCategory(
@@ -431,6 +493,20 @@ async function main() {
         name: meal.name,
         isActive: true,
       },
+    });
+  }
+
+  for (let i = 0; i < DEFAULT_LEAVE_TYPES.length; i++) {
+    const name = DEFAULT_LEAVE_TYPES[i]!;
+    await prisma.leaveType.upsert({
+      where: { organizationId_name: { organizationId: org.id, name } },
+      create: {
+        organizationId: org.id,
+        name,
+        active: true,
+        sortOrder: i + 1,
+      },
+      update: { active: true, sortOrder: i + 1 },
     });
   }
 

@@ -10,6 +10,13 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/providers/ToastProvider';
 import { BrandLogo, cacheBrandingLogoUrl } from '@/components/BrandLogo';
 import { api, getActiveOrganizationId } from '@/lib/api';
+import {
+  DEFAULT_GATE_PASS_SETTINGS,
+  GATE_PASS_SETTINGS_KEY,
+  cacheGatePassSettings,
+  mergeGatePassSettings,
+  type GatePassTemplateSettings,
+} from '@/lib/gate-pass-print';
 
 type Setting = {
   id?: string;
@@ -18,9 +25,22 @@ type Setting = {
   description?: string | null;
 };
 
-type TabId = 'General' | 'Meal Sessions' | 'Branding' | 'Security' | 'Notifications';
+type TabId =
+  | 'General'
+  | 'Meal Sessions'
+  | 'Branding'
+  | 'Gate Pass'
+  | 'Security'
+  | 'Notifications';
 
-const TABS: TabId[] = ['General', 'Meal Sessions', 'Branding', 'Security', 'Notifications'];
+const TABS: TabId[] = [
+  'General',
+  'Meal Sessions',
+  'Branding',
+  'Gate Pass',
+  'Security',
+  'Notifications',
+];
 
 const MEALS_DEFAULT = {
   defaultGraceMinutes: 15,
@@ -121,6 +141,7 @@ export default function SettingsPage() {
   const [security, setSecurity] = useState(SECURITY_DEFAULT);
   const [notifications, setNotifications] = useState(NOTIFICATIONS_DEFAULT);
   const [branding, setBranding] = useState(BRANDING_DEFAULT);
+  const [gatePass, setGatePass] = useState<GatePassTemplateSettings>(DEFAULT_GATE_PASS_SETTINGS);
 
   const hydrate = useCallback((items: Setting[]) => {
     const map: Record<string, unknown> = {};
@@ -184,6 +205,10 @@ export default function SettingsPage() {
       supportEmail: asString(brandObj.supportEmail, BRANDING_DEFAULT.supportEmail),
     });
     cacheBrandingLogoUrl(logoUrl);
+
+    const gp = mergeGatePassSettings(map[GATE_PASS_SETTINGS_KEY]);
+    setGatePass(gp);
+    cacheGatePassSettings(gp);
   }, []);
 
   const load = useCallback(async () => {
@@ -263,6 +288,12 @@ export default function SettingsPage() {
     e.preventDefault();
     cacheBrandingLogoUrl(branding.logoUrl);
     void saveKeys([{ key: 'settings.branding', value: branding }]);
+  }
+
+  function onSaveGatePass(e: FormEvent) {
+    e.preventDefault();
+    cacheGatePassSettings(gatePass);
+    void saveKeys([{ key: GATE_PASS_SETTINGS_KEY, value: gatePass }]);
   }
 
   return (
@@ -425,6 +456,82 @@ export default function SettingsPage() {
             <Button type="submit" loading={saving}>
               Save branding
             </Button>
+          </div>
+        </form>
+      ) : null}
+
+      {!loading && tab === 'Gate Pass' ? (
+        <form className="panel settings-form" onSubmit={onSaveGatePass}>
+          <h2 className="settings-heading">Gate Pass Designer</h2>
+          <p className="muted" style={{ margin: '0 0 12px', fontSize: '0.85rem' }}>
+            Configure printable A4 gate pass cards. Changes apply to Print Selected, blank
+            templates, and leave detail printing.
+          </p>
+          <div className="settings-fields">
+            <Input
+              label="Header text"
+              value={gatePass.headerText}
+              onChange={(e) => setGatePass((g) => ({ ...g, headerText: e.target.value }))}
+            />
+            <Input
+              label="Sub-header"
+              value={gatePass.subHeaderText}
+              onChange={(e) => setGatePass((g) => ({ ...g, subHeaderText: e.target.value }))}
+            />
+            <Input
+              label="Footer note"
+              value={gatePass.footerText}
+              onChange={(e) => setGatePass((g) => ({ ...g, footerText: e.target.value }))}
+            />
+            <label className="field">
+              <span>Default cards per A4</span>
+              <select
+                className="input"
+                value={gatePass.cardsPerPage}
+                onChange={(e) =>
+                  setGatePass((g) => ({
+                    ...g,
+                    cardsPerPage: Number(e.target.value) as 1 | 4 | 8,
+                  }))
+                }
+              >
+                <option value={8}>8 cards (recommended)</option>
+                <option value={4}>4 cards</option>
+                <option value={1}>1 card</option>
+              </select>
+            </label>
+          </div>
+          <div className="settings-toggles">
+            {(
+              [
+                ['showLogo', 'Show logo'],
+                ['showBarcode', 'Show barcode'],
+                ['showQr', 'Show verification mark'],
+                ['showCampus', 'Show campus'],
+                ['showProgram', 'Show program'],
+                ['showDestination', 'Show destination'],
+                ['showNotes', 'Show notes'],
+                ['showSignature', 'Signature line'],
+                ['showStamp', 'Stamp area'],
+              ] as const
+            ).map(([key, label]) => (
+              <Toggle
+                key={key}
+                label={label}
+                checked={gatePass[key]}
+                onChange={(v) => setGatePass((g) => ({ ...g, [key]: v }))}
+              />
+            ))}
+          </div>
+          <div className="settings-actions" style={{ gap: 8 }}>
+            <Button type="submit" loading={saving}>
+              Save gate pass template
+            </Button>
+            <Link href="/leave/print?blank=1&layout=8&count=8">
+              <Button type="button" variant="secondary">
+                Preview blank sheet
+              </Button>
+            </Link>
           </div>
         </form>
       ) : null}

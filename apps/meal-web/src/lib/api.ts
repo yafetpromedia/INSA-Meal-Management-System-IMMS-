@@ -36,10 +36,15 @@ export function setTokens(accessToken: string, refreshToken: string, remember = 
   if (!accessToken || !refreshToken || accessToken === 'undefined' || refreshToken === 'undefined') {
     throw new Error('Invalid session tokens');
   }
-  clearTokens();
+  // Only rotate tokens — never wipe imms_user / imms_org (refresh used to clear nav/RBAC).
+  for (const store of [localStorage, sessionStorage]) {
+    store.removeItem('imms_access');
+    store.removeItem('imms_refresh');
+  }
   const store = remember ? localStorage : sessionStorage;
   store.setItem('imms_access', accessToken);
   store.setItem('imms_refresh', refreshToken);
+  store.setItem('imms_remember', remember ? '1' : '0');
 }
 
 export function clearTokens() {
@@ -51,6 +56,14 @@ export function clearTokens() {
     store.removeItem('imms_org');
     store.removeItem('imms_remember');
   }
+}
+
+function shouldRememberSession() {
+  if (typeof window === 'undefined') return true;
+  const flag = localStorage.getItem('imms_remember') || sessionStorage.getItem('imms_remember');
+  if (flag === '0') return false;
+  if (flag === '1') return true;
+  return Boolean(localStorage.getItem('imms_access') || localStorage.getItem('imms_refresh'));
 }
 
 function unwrap<T>(payload: T | ApiEnvelope<T>): T {
@@ -91,8 +104,14 @@ async function refreshAccessToken(): Promise<boolean> {
       const payload = await res.json();
       const data = unwrap<LoginResponse>(payload);
       if (!data?.accessToken || !data?.refreshToken) return false;
-      const remember = !sessionStorage.getItem('imms_access');
-      setTokens(data.accessToken, data.refreshToken, remember);
+      setTokens(data.accessToken, data.refreshToken, shouldRememberSession());
+      if (data.user) {
+        const store = shouldRememberSession() ? localStorage : sessionStorage;
+        store.setItem('imms_user', JSON.stringify(data.user));
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('imms-auth'));
+      }
       return true;
     } catch {
       return false;
@@ -105,6 +124,15 @@ async function refreshAccessToken(): Promise<boolean> {
 }
 
 export async function api<T>(path: string, options: RequestInit = {}, retried = false): Promise<T> {
+  const { data } = await apiWithMeta<T>(path, options, retried);
+  return data;
+}
+
+export async function apiWithMeta<T>(
+  path: string,
+  options: RequestInit = {},
+  retried = false,
+): Promise<{ data: T; meta: Record<string, unknown> }> {
   const { accessToken } = getTokens();
   const headers = new Headers(options.headers);
   if (!(options.body instanceof FormData)) {
@@ -117,7 +145,7 @@ export async function api<T>(path: string, options: RequestInit = {}, retried = 
 
   if (res.status === 401 && !retried && !path.startsWith('/auth/')) {
     const ok = await refreshAccessToken();
-    if (ok) return api<T>(path, options, true);
+    if (ok) return apiWithMeta<T>(path, options, true);
     redirectToLogin();
     throw new Error('Session expired. Please log in again.');
   }
@@ -128,7 +156,12 @@ export async function api<T>(path: string, options: RequestInit = {}, retried = 
         (res.status === 401 ? 'Session expired. Please log in again.' : 'Request failed'),
     );
   }
-  return unwrap<T>(payload);
+
+  const envelope = payload as ApiEnvelope<T>;
+  return {
+    data: unwrap<T>(payload),
+    meta: (envelope && typeof envelope === 'object' && envelope.meta) || {},
+  };
 }
 
 export async function login(

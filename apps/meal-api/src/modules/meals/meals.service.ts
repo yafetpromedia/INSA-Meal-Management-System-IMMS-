@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import { MealRecordStatus, StudentStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -18,12 +18,15 @@ import {
   scopeCampusFilter,
   scopeOrganizationFilter,
 } from '../auth/auth.types';
+import { LeaveService } from '../leave/leave.service';
 
 @Injectable()
 export class MealsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    @Inject(forwardRef(() => LeaveService))
+    private readonly leaveService: LeaveService,
   ) {}
 
   async listConfigs(organizationId: string, campusId?: string) {
@@ -199,16 +202,27 @@ export class MealsService {
   ) {
     const orgId = resolveActiveOrganizationId(user, input.organizationId);
     if (!orgId && !user.isSuperAdmin) {
-      throw new BadRequestException('Organization context required');
+      throw new BadRequestException(
+        'Organization context required. Sign out and sign in again.',
+      );
     }
     if (!input.barcode && !input.studentId) {
       throw new BadRequestException('barcode or studentId is required');
     }
+    if (!user.isSuperAdmin && user.campusIds.length === 0) {
+      throw new ForbiddenException(
+        'No campus assigned to your account. Ask an admin to assign your campus, then sign in again.',
+      );
+    }
 
-    const scope = {
+    const orgScope = {
       deletedAt: null as null,
       ...(orgId ? { organizationId: orgId } : {}),
       ...scopeOrganizationFilter(user),
+    };
+    const scope = {
+      ...orgScope,
+      ...scopeCampusFilter(user),
     };
 
     const include = { campus: true, program: true } as const;
@@ -219,27 +233,35 @@ export class MealsService {
         where: { ...scope, id: input.studentId },
         include,
       });
-      if (byPk) {
-        if (!user.isSuperAdmin && !user.campusIds.includes(byPk.campusId)) {
-          throw new NotFoundException('Student Not Found');
-        }
-        return byPk;
+      if (byPk) return byPk;
+
+      const outsidePk = await this.prisma.student.findFirst({
+        where: { ...orgScope, id: input.studentId },
+        select: { studentId: true },
+      });
+      if (outsidePk) {
+        throw new ForbiddenException(
+          `Student ${outsidePk.studentId} is outside your campus. Ask an admin to update your campus access.`,
+        );
       }
     }
 
     const key = (input.barcode ?? input.studentId ?? '').trim();
     if (!key) throw new BadRequestException('barcode or studentId is required');
 
-    // Exact studentId or barcode (full CTC-1900-26)
+    // Exact studentId or barcode (full CTC-1900-26), case-insensitive
     let student = await this.prisma.student.findFirst({
       where: {
         ...scope,
-        OR: [{ barcode: key }, { studentId: key }],
+        OR: [
+          { barcode: { equals: key, mode: 'insensitive' } },
+          { studentId: { equals: key, mode: 'insensitive' } },
+        ],
       },
       include,
     });
 
-    // Short form: type 1900 to match CTC-1900-26 (segment between dashes)
+    // Short form: type 1900 to match CTC-1900-26 (segment between dashes) — within campus
     if (!student) {
       const short = key.replace(/^#+/, '');
       const looksShort =
@@ -279,8 +301,25 @@ export class MealsService {
       }
     }
 
-    if (!student) throw new NotFoundException('Student Not Found');
-    if (!user.isSuperAdmin && !user.campusIds.includes(student.campusId)) {
+    if (!student) {
+      // Exists in org but outside mentor campus?
+      const outside = await this.prisma.student.findFirst({
+        where: {
+          ...orgScope,
+          OR: [
+            { barcode: { equals: key, mode: 'insensitive' } },
+            { studentId: { equals: key, mode: 'insensitive' } },
+          ],
+        },
+        select: { studentId: true, campus: { select: { shortName: true, name: true } } },
+      });
+      if (outside) {
+        const campusLabel =
+          outside.campus?.shortName || outside.campus?.name || 'another campus';
+        throw new ForbiddenException(
+          `Student ${outside.studentId} belongs to ${campusLabel}, which is outside your campus access.`,
+        );
+      }
       throw new NotFoundException('Student Not Found');
     }
     return student;
@@ -297,6 +336,17 @@ export class MealsService {
         reason: 'Student inactive',
         student,
         mealSession: null,
+      };
+    }
+
+    const outsideLeave = await this.leaveService.findActiveOutsideLeave(student.id);
+    if (outsideLeave) {
+      return {
+        eligible: false,
+        reason: `Approved leave (${outsideLeave.leaveNumber})`,
+        student,
+        mealSession: null,
+        leaveRequestId: outsideLeave.id,
       };
     }
 
@@ -365,6 +415,13 @@ export class MealsService {
     const student = await this.resolveStudentForMeal(user, input);
     if (student.status !== StudentStatus.ACTIVE) {
       throw new BadRequestException('Student inactive');
+    }
+
+    const outsideLeave = await this.leaveService.findActiveOutsideLeave(student.id);
+    if (outsideLeave) {
+      throw new BadRequestException(
+        `Approved leave (${outsideLeave.leaveNumber})`,
+      );
     }
 
     const openMeal = await this.currentMeal(student.organizationId, student.campusId);

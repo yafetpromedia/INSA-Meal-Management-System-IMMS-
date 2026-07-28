@@ -17,8 +17,9 @@ import { StatusChip } from '@/components/ui/Badge';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/Button';
 import { api, getActiveOrganizationId } from '@/lib/api';
-import { homePathForRole, readStoredUser } from '@/lib/rbac';
+import { canViewLeaveSummary, homePathForRole, readStoredUser } from '@/lib/rbac';
 import { formatEthiopiaTime } from '@/lib/timezone';
+import type { LeaveSummary } from '@/lib/leave';
 
 type Summary = {
   totalStudents: number;
@@ -92,6 +93,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<ReturnType<typeof readStoredUser>>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [leaveSummary, setLeaveSummary] = useState<LeaveSummary | null>(null);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -106,6 +108,7 @@ export default function DashboardPage() {
     setError('');
     const orgId = getActiveOrganizationId();
     const q = orgId ? `?organizationId=${orgId}` : '';
+    const showLeave = canViewLeaveSummary(readStoredUser());
     try {
       const [s, a] = await Promise.all([
         api<Summary>(`/dashboard/summary${q}`),
@@ -113,6 +116,16 @@ export default function DashboardPage() {
       ]);
       setSummary(s);
       setActivity(Array.isArray(a) ? a : []);
+      if (showLeave) {
+        try {
+          const ls = await api<LeaveSummary>(`/leave-requests/summary${q}`);
+          setLeaveSummary(ls);
+        } catch {
+          setLeaveSummary(null);
+        }
+      } else {
+        setLeaveSummary(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard');
     } finally {
@@ -279,6 +292,51 @@ export default function DashboardPage() {
                 </div>
               ))}
         </section>
+
+        {leaveSummary ? (
+          <section className="dash-stats" aria-label="Leave overview" style={{ marginTop: 12 }}>
+            {[
+              {
+                label: 'Outside',
+                value: leaveSummary.outside,
+                hint: 'Checked out',
+                href: '/leave/outside',
+              },
+              {
+                label: 'Overdue',
+                value: leaveSummary.overdue,
+                hint: 'Past expected return',
+                href: '/leave/outside',
+                warn: leaveSummary.overdue > 0,
+              },
+              {
+                label: 'Pending',
+                value: leaveSummary.pending,
+                hint: 'Awaiting approval',
+                href: '/leave',
+              },
+            ].map((card) => (
+              <div
+                className={`dash-stat ${card.warn ? 'is-warn' : ''}`}
+                key={card.label}
+                role="link"
+                tabIndex={0}
+                style={{ cursor: 'pointer' }}
+                onClick={() => router.push(card.href)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    router.push(card.href);
+                  }
+                }}
+              >
+                <span className="dash-stat-label">{card.label}</span>
+                <strong>{card.value}</strong>
+                <span className="muted dash-stat-hint">{card.hint}</span>
+              </div>
+            ))}
+          </section>
+        ) : null}
 
         <div className="dash-grid">
           <section className="panel dash-panel">

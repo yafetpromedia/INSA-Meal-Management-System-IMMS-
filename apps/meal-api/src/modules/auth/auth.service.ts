@@ -98,35 +98,25 @@ export class AuthService {
       userAgent: meta.userAgent,
     });
 
-    const defaultOrganizationId =
-      user.organizationAssignments.find((o) => o.isDefault)?.organizationId ??
-      user.organizationAssignments[0]?.organizationId ??
-      null;
-
-    return {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        fullName: user.fullName,
-        roles: user.roles.map((r) => r.role.name),
-        organizationIds: user.organizationAssignments.map((o) => o.organizationId),
-        defaultOrganizationId,
-        campusIds: user.campusAssignments.map((c) => c.campusId),
-        programIds: user.programAssignments.map((p) => p.programId),
-      },
-    };
+    return this.toAuthResponse(user, tokens);
   }
 
   async refresh(refreshToken: string, meta: { ip?: string; userAgent?: string }) {
     const hash = this.hashToken(refreshToken);
     const session = await this.prisma.session.findFirst({
       where: { refreshTokenHash: hash, revokedAt: null, expiresAt: { gt: new Date() } },
-      include: { user: true },
+      include: {
+        user: {
+          include: {
+            roles: { include: { role: true } },
+            organizationAssignments: true,
+            campusAssignments: true,
+            programAssignments: true,
+          },
+        },
+      },
     });
-    if (!session || session.user.status !== AccountStatus.ACTIVE) {
+    if (!session || session.user.status !== AccountStatus.ACTIVE || session.user.deletedAt) {
       throw new UnauthorizedException('Session expired. Please log in again.');
     }
 
@@ -135,7 +125,8 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
 
-    return this.issueTokens(session.userId, session.user.username, meta);
+    const tokens = await this.issueTokens(session.userId, session.user.username, meta);
+    return this.toAuthResponse(session.user, tokens);
   }
 
   async logout(user: AuthUser, refreshToken?: string, meta?: { ip?: string; userAgent?: string }) {
@@ -408,6 +399,41 @@ export class AuthService {
         data: { failedLoginAttempts: attempts },
       });
     }
+  }
+
+  private toAuthResponse(
+    user: {
+      id: string;
+      username: string;
+      email: string | null;
+      fullName: string;
+      roles: Array<{ role: { name: string } }>;
+      organizationAssignments: Array<{ organizationId: string; isDefault: boolean }>;
+      campusAssignments: Array<{ campusId: string }>;
+      programAssignments: Array<{ programId: string }>;
+    },
+    tokens: { accessToken: string; refreshToken: string },
+  ) {
+    const defaultOrganizationId =
+      user.organizationAssignments.find((o) => o.isDefault)?.organizationId ??
+      user.organizationAssignments[0]?.organizationId ??
+      null;
+
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        fullName: user.fullName,
+        roles: user.roles.map((r) => r.role.name),
+        organizationIds: user.organizationAssignments.map((o) => o.organizationId),
+        defaultOrganizationId,
+        campusIds: user.campusAssignments.map((c) => c.campusId),
+        programIds: user.programAssignments.map((p) => p.programId),
+      },
+    };
   }
 
   private async issueTokens(

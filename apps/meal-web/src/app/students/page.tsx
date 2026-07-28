@@ -14,8 +14,7 @@ import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/providers/ToastProvider';
-import { getActiveOrganizationId } from '@/lib/api';
-import { api } from '@/lib/api';
+import { getActiveOrganizationId, api, apiWithMeta } from '@/lib/api';
 import { canImportStudents, canManageStudents, readStoredUser } from '@/lib/rbac';
 
 type StudentRow = {
@@ -35,8 +34,6 @@ type StudentRow = {
 };
 
 type Option = { id: string; name: string; shortName?: string };
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
 
 function StudentsContent() {
   const router = useRouter();
@@ -103,13 +100,10 @@ function StudentsContent() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API_URL}/students?${qs}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('imms_access') ?? ''}` },
-      });
-      const body = await res.json();
-      if (!res.ok || body.success === false) throw new Error(body.message ?? 'Failed');
-      setItems(body.data ?? []);
-      setTotal(body.meta?.total ?? 0);
+      const { data, meta } = await apiWithMeta<StudentRow[]>(`/students?${qs}`);
+      const rows = Array.isArray(data) ? data : [];
+      setItems(rows);
+      setTotal(Number(meta.total ?? rows.length));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load students');
     } finally {
@@ -118,7 +112,9 @@ function StudentsContent() {
   }
 
   useEffect(() => {
-    if (!localStorage.getItem('imms_access')) {
+    const access =
+      localStorage.getItem('imms_access') || sessionStorage.getItem('imms_access');
+    if (!access) {
       router.replace('/login');
       return;
     }
@@ -129,7 +125,9 @@ function StudentsContent() {
   }, [router]);
 
   useEffect(() => {
-    if (!localStorage.getItem('imms_access')) return;
+    const access =
+      localStorage.getItem('imms_access') || sessionStorage.getItem('imms_access');
+    if (!access) return;
     void loadList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, q]);
@@ -326,9 +324,9 @@ function StudentsContent() {
                     <td>
                       <code style={{ fontSize: '0.8125rem' }}>{s.studentId}</code>
                     </td>
-                    <td style={{ fontWeight: 500 }}>{s.fullName}</td>
-                    <td>{s.program?.name ?? '—'}</td>
-                    <td>{s.campus?.shortName ?? '—'}</td>
+                    <td style={{ fontWeight: 500 }}>{s.fullName?.trim() || '—'}</td>
+                    <td>{s.program?.name?.trim() || '—'}</td>
+                    <td>{s.campus?.shortName?.trim() || s.campus?.name?.trim() || '—'}</td>
                     <td>
                       <StatusChip tone={s.status === 'ACTIVE' ? 'success' : 'warning'}>{s.status}</StatusChip>
                     </td>

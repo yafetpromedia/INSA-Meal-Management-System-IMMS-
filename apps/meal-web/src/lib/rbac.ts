@@ -51,6 +51,37 @@ export function canImportStudents(user: ImmsUser | null | undefined) {
 
 export function homePathForRole(user: ImmsUser | null | undefined) {
   const roles = user?.roles ?? [];
+  if (roles.includes('GateOfficer')) return '/gate';
   if (roles.includes('FoodStaff') || roles.includes('Mentor')) return '/meals';
   return '/dashboard';
+}
+
+export function canApproveLeave(user: ImmsUser | null | undefined) {
+  return hasAnyRole(user, ['SuperAdmin', 'Admin', 'CampusCoordinator']);
+}
+
+export function canViewLeaveSummary(user: ImmsUser | null | undefined) {
+  const roles = user?.roles ?? [];
+  if (roles.includes('SuperAdmin')) return true;
+  const mealOnly =
+    roles.includes('FoodStaff') &&
+    !roles.some((r) =>
+      [
+        'Admin',
+        'CampusCoordinator',
+        'ProgramCoordinator',
+        'Mentor',
+        'Viewer',
+        'GateOfficer',
+      ].includes(r),
+    );
+  if (mealOnly) return false;
+  return hasAnyRole(user, [
+    'Admin',
+    'CampusCoordinator',
+    'ProgramCoordinator',
+    'Mentor',
+    'Viewer',
+    'GateOfficer',
+  ]);
 }

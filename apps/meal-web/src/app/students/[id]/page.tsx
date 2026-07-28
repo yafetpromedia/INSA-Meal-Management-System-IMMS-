@@ -11,6 +11,15 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { api, getActiveOrganizationId } from '@/lib/api';
 import { APP_TIMEZONE, formatEthiopiaTime } from '@/lib/timezone';
+import {
+  durationBetween,
+  formatDurationMinutes,
+  formatLeaveDate,
+  formatLeaveDateTime,
+  leaveStatusLabel,
+  leaveStatusTone,
+  type LeaveRequest,
+} from '@/lib/leave';
 
 type MealProfile = {
   student: {
@@ -89,6 +98,8 @@ export default function StudentMealProfilePage() {
   const studentKey = params?.id ?? '';
 
   const [profile, setProfile] = useState<MealProfile | null>(null);
+  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  const [leavesLoading, setLeavesLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -103,7 +114,15 @@ export default function StudentMealProfilePage() {
     const q = orgId ? `?organizationId=${orgId}` : '';
     setLoading(true);
     api<MealProfile>(`/meals/profile/${encodeURIComponent(studentKey)}${q}`)
-      .then((data) => setProfile(data))
+      .then((data) => {
+        setProfile(data);
+        const id = data.student.id;
+        setLeavesLoading(true);
+        api<LeaveRequest[]>(`/leave-requests/student/${encodeURIComponent(id)}`)
+          .then((rows) => setLeaves(Array.isArray(rows) ? rows : []))
+          .catch(() => setLeaves([]))
+          .finally(() => setLeavesLoading(false));
+      })
       .catch((err: Error) => setError(err.message || 'Failed to load profile'))
       .finally(() => setLoading(false));
   }, [router, studentKey]);
@@ -354,6 +373,67 @@ export default function StudentMealProfilePage() {
                         </td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className="panel">
+            <h3 className="profile-section-title">Leave history</h3>
+            <p className="muted" style={{ marginTop: 0, marginBottom: 12, fontSize: '0.8125rem' }}>
+              Gate passes and leave requests for this student.
+            </p>
+            {leavesLoading ? (
+              <Skeleton height={80} />
+            ) : leaves.length === 0 ? (
+              <EmptyState title="No leave history for this student" />
+            ) : (
+              <div className="table-wrap">
+                <table className="table zebra">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Type</th>
+                      <th>Destination</th>
+                      <th>Exit</th>
+                      <th>Return</th>
+                      <th>Duration</th>
+                      <th>Status</th>
+                      <th>Approved By</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leaves.map((row) => {
+                      const duration =
+                        durationBetween(row.actualExitTime, row.actualReturnTime) ??
+                        durationBetween(row.expectedExitTime, row.expectedReturnTime);
+                      return (
+                        <tr key={row.id}>
+                          <td>
+                            <Link href={`/leave/${row.id}`} className="table-link">
+                              {formatLeaveDate(row.createdAt)}
+                            </Link>
+                            <div className="muted" style={{ fontSize: '0.75rem' }}>
+                              {row.leaveNumber}
+                            </div>
+                          </td>
+                          <td>{row.leaveType?.name ?? '—'}</td>
+                          <td>{row.destination}</td>
+                          <td>{formatLeaveDateTime(row.actualExitTime ?? row.expectedExitTime)}</td>
+                          <td>
+                            {formatLeaveDateTime(row.actualReturnTime ?? row.expectedReturnTime)}
+                          </td>
+                          <td>{formatDurationMinutes(duration)}</td>
+                          <td>
+                            <StatusChip tone={leaveStatusTone(row.status)}>
+                              {leaveStatusLabel(row.status)}
+                            </StatusChip>
+                          </td>
+                          <td>{row.approvedBy?.fullName ?? '—'}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

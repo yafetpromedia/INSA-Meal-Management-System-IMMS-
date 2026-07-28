@@ -71,7 +71,7 @@ type GateState =
       student?: Student | null;
       message: string;
     }
-  | { kind: 'not_found'; code: string; message: string };
+  | { kind: 'not_found'; code: string; title: string; message: string };
 
 function initials(name: string) {
   return name
@@ -323,24 +323,35 @@ export default function MealsPage() {
         await serveStudent(result.student, result.mealSession);
       } catch (err) {
         playError();
-        const message = err instanceof Error ? err.message : 'Student Not Found';
+        const message = err instanceof Error ? err.message : 'Student not found';
+        const lower = message.toLowerCase();
+        let title = 'Scan failed';
+        if (lower.includes('multiple students')) title = 'Use full ID';
+        else if (lower.includes('no campus assigned')) title = 'No campus assigned';
+        else if (lower.includes('outside your campus') || lower.includes('campus access')) {
+          title = 'Outside your campus';
+        } else if (lower.includes('organization context')) title = 'Sign in again';
+        else if (lower.includes('not found')) title = 'Not found';
+        else if (lower.includes('meal session closed')) title = 'Session closed';
+
         pushLocalNotification({
           kind: 'error',
-          title: 'Student not found',
-          message: code,
+          title,
+          message: `${code} · ${message}`,
           href: '/meals',
         });
         setGate({
           kind: 'not_found',
           code,
-          message: message.includes('Not Found') ? 'Student not found' : message,
+          title,
+          message,
         });
         pushRecent({
           name: code,
           studentId: code,
           status: 'not_found',
         });
-        scheduleClear(1400);
+        scheduleClear(2200);
       } finally {
         inFlight.current = false;
         setBusy(false);
@@ -592,8 +603,13 @@ export default function MealsPage() {
                   <div className="meal-gate-icon err" aria-hidden>
                     <X size={32} strokeWidth={2.5} />
                   </div>
-                  <h2 className="meal-gate-name">Not found</h2>
+                  <h2 className="meal-gate-name">{gate.title}</h2>
                   <p className="meal-gate-id muted">{gate.code}</p>
+                  {gate.message ? (
+                    <p className="muted" style={{ margin: '8px 0 0', fontSize: '0.875rem', maxWidth: '20rem' }}>
+                      {gate.message}
+                    </p>
+                  ) : null}
                 </div>
               </>
             ) : null}

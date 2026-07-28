@@ -28,11 +28,12 @@ type Staff = {
 
 type Campus = { id: string; name: string; shortName: string };
 
-type StaffRole = 'Mentor' | 'FoodStaff';
+type StaffRole = 'Mentor' | 'FoodStaff' | 'GateOfficer';
 
 function roleLabel(name: string) {
   if (name === 'FoodStaff') return 'Cafeteria staff';
   if (name === 'Mentor') return 'Mentor';
+  if (name === 'GateOfficer') return 'Gate Officer';
   return name;
 }
 
@@ -122,8 +123,12 @@ export default function StaffPage() {
 
   function openEdit(m: Staff) {
     setEditing(m);
-    const role = m.roles.find((r) => r.role.name === 'FoodStaff' || r.role.name === 'Mentor')
-      ?.role.name as StaffRole | undefined;
+    const role = m.roles.find(
+      (r) =>
+        r.role.name === 'FoodStaff' ||
+        r.role.name === 'Mentor' ||
+        r.role.name === 'GateOfficer',
+    )?.role.name as StaffRole | undefined;
     setForm({
       fullName: m.fullName,
       username: m.username,
@@ -151,6 +156,15 @@ export default function StaffPage() {
     setSaving(true);
     try {
       if (modal === 'create') {
+        if (form.campusIds.length === 0) {
+          push({
+            kind: 'error',
+            title: 'Campus required',
+            message: 'Pick at least one campus so they can scan students at meal distribution.',
+          });
+          setSaving(false);
+          return;
+        }
         await api('/mentors', {
           method: 'POST',
           body: JSON.stringify({
@@ -166,21 +180,42 @@ export default function StaffPage() {
         });
         push({
           kind: 'success',
-          title: form.roleName === 'FoodStaff' ? 'Cafeteria staff created' : 'Mentor created',
+          title:
+            form.roleName === 'FoodStaff'
+              ? 'Cafeteria staff created'
+              : form.roleName === 'GateOfficer'
+                ? 'Gate officer created'
+                : 'Mentor created',
           message:
             form.roleName === 'FoodStaff'
               ? 'They can sign in and only use Meal Distribution (door scan).'
-              : undefined,
+              : form.roleName === 'GateOfficer'
+                ? 'They can sign in and use Gate Scanner for exit/return.'
+                : undefined,
         });
       } else if (editing) {
+        if (form.campusIds.length === 0) {
+          push({
+            kind: 'error',
+            title: 'Campus required',
+            message: 'Pick at least one campus so they can scan students at meal distribution.',
+          });
+          setSaving(false);
+          return;
+        }
         await api(`/mentors/${editing.id}`, {
           method: 'PATCH',
           body: JSON.stringify({
             fullName: form.fullName.trim(),
             phone: form.phone.trim() || undefined,
+            campusIds: form.campusIds,
           }),
         });
-        push({ kind: 'success', title: 'Staff updated' });
+        push({
+          kind: 'success',
+          title: 'Staff updated',
+          message: 'If they are signed in, ask them to sign out and sign in again to refresh campus access.',
+        });
       }
       setModal(null);
       await load();
@@ -229,7 +264,7 @@ export default function StaffPage() {
         <div>
           <h1 className="page-title">Staff</h1>
           <p className="page-sub">
-            Mentors and cafeteria door staff who scan student barcodes at meal time.
+            Mentors, cafeteria door staff, and gate officers who scan student barcodes.
           </p>
         </div>
         <AddButton onClick={openCreate} label="Add" />
@@ -268,7 +303,13 @@ export default function StaffPage() {
                   <td>
                     {m.roles.map((r) => roleLabel(r.role.name)).join(', ') || '—'}
                   </td>
-                  <td>{m.campusAssignments?.length ?? 0}</td>
+                  <td>
+                    {(m.campusAssignments?.length ?? 0) === 0 ? (
+                      <StatusChip tone="warning">None — cannot scan</StatusChip>
+                    ) : (
+                      m.campusAssignments?.length
+                    )}
+                  </td>
                   <td>
                     <StatusChip tone={m.status === 'ACTIVE' ? 'success' : 'warning'}>
                       {m.status}
@@ -328,6 +369,20 @@ export default function StaffPage() {
                     <strong style={{ fontWeight: 600 }}>Mentor</strong>
                     <span className="muted" style={{ display: 'block', fontSize: '0.8rem' }}>
                       Can scan meals plus view students, history, and reports.
+                    </span>
+                  </span>
+                </label>
+                <label className="checkbox-row" style={{ alignItems: 'flex-start' }}>
+                  <input
+                    type="radio"
+                    name="roleName"
+                    checked={form.roleName === 'GateOfficer'}
+                    onChange={() => setForm((f) => ({ ...f, roleName: 'GateOfficer' }))}
+                  />
+                  <span>
+                    <strong style={{ fontWeight: 600 }}>Gate Officer</strong>
+                    <span className="muted" style={{ display: 'block', fontSize: '0.8rem' }}>
+                      Exit / return scans at the campus gate. Sees Students Outside.
                     </span>
                   </span>
                 </label>
@@ -403,10 +458,13 @@ export default function StaffPage() {
             value={form.phone}
             onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
           />
-          {modal === 'create' && campuses.length > 0 ? (
+          {campuses.length > 0 ? (
             <div className="field">
               <span>Campus access</span>
-              <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
+              <p className="muted" style={{ margin: '4px 0 8px', fontSize: '0.75rem' }}>
+                Required — mentors can only scan students on assigned campuses.
+              </p>
+              <div style={{ display: 'grid', gap: 6 }}>
                 {campuses.map((c) => (
                   <label key={c.id} className="checkbox-row">
                     <input
@@ -419,7 +477,11 @@ export default function StaffPage() {
                 ))}
               </div>
             </div>
-          ) : null}
+          ) : (
+            <p className="error" style={{ margin: 0 }}>
+              Create a campus first, then assign staff to it.
+            </p>
+          )}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <Button type="button" variant="ghost" onClick={() => setModal(null)}>
               Cancel

@@ -5,8 +5,8 @@ import { RequirePermissions } from '../../common/decorators/permissions.decorato
 import { AuthUser } from '../auth/auth.types';
 import { UsersService } from './users.service';
 
-/** Operational meal staff: Mentor (broader) or FoodStaff (cafeteria door scan-only). */
-const STAFF_ROLES = ['Mentor', 'FoodStaff'] as const;
+/** Operational staff: Mentor, FoodStaff (cafeteria), GateOfficer (exit/return). */
+const STAFF_ROLES = ['Mentor', 'FoodStaff', 'GateOfficer'] as const;
 
 class CreateMentorDto {
   @IsString() @MinLength(3) username!: string;
@@ -14,8 +14,8 @@ class CreateMentorDto {
   @IsString() @MinLength(2) fullName!: string;
   @IsString() @MinLength(8) password!: string;
   @IsOptional() @IsString() phone?: string;
-  /** Mentor = meal ops + history; FoodStaff = cafeteria gate scan only. */
-  @IsOptional() @IsIn(STAFF_ROLES) roleName?: 'Mentor' | 'FoodStaff';
+  /** Mentor = meal ops + history; FoodStaff = cafeteria scan; GateOfficer = gate. */
+  @IsOptional() @IsIn(STAFF_ROLES) roleName?: 'Mentor' | 'FoodStaff' | 'GateOfficer';
   @IsOptional() @IsArray() @IsString({ each: true }) organizationIds?: string[];
   @IsOptional() @IsArray() @IsString({ each: true }) campusIds?: string[];
 }
@@ -23,6 +23,7 @@ class CreateMentorDto {
 class UpdateMentorDto {
   @IsOptional() @IsString() fullName?: string;
   @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) campusIds?: string[];
 }
 
 @Controller('mentors')
@@ -45,6 +46,7 @@ export class MentorsController {
     return this.users.create(user, {
       ...rest,
       roleNames: [roleName ?? 'Mentor'],
+      requireCampus: true,
     });
   }
 
@@ -55,7 +57,7 @@ export class MentorsController {
     @Param('id') id: string,
     @Body() dto: UpdateMentorDto,
   ) {
-    return this.users.updateProfile(user, id, dto);
+    return this.users.updateStaff(user, id, dto);
   }
 
   @Delete(':id')

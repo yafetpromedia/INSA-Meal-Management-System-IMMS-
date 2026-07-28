@@ -7,6 +7,9 @@ import {
   Building2,
   CalendarDays,
   ClipboardList,
+  ClipboardPen,
+  DoorOpen,
+  FileBarChart,
   GraduationCap,
   LayoutDashboard,
   LogOut,
@@ -16,13 +19,16 @@ import {
   Search,
   Settings,
   Sun,
+  Tags,
   UserCircle,
   UtensilsCrossed,
   Users,
+  UsersRound,
   History,
   Timer,
   FileSpreadsheet,
   Building,
+  Printer,
 } from 'lucide-react';
 import { clearTokens } from '@/lib/api';
 import { homePathForRole, readStoredUser, type ImmsUser } from '@/lib/rbac';
@@ -117,6 +123,69 @@ const NAV: NavItem[] = [
     ],
   },
   {
+    href: '/leave',
+    label: 'Leave Requests',
+    icon: ClipboardPen,
+    roles: [
+      'SuperAdmin',
+      'Admin',
+      'CampusCoordinator',
+      'ProgramCoordinator',
+      'Mentor',
+      'Viewer',
+      'FoodStaff',
+    ],
+  },
+  {
+    href: '/gate',
+    label: 'Gate Scanner',
+    icon: DoorOpen,
+    roles: ['SuperAdmin', 'Admin', 'CampusCoordinator', 'GateOfficer'],
+  },
+  {
+    href: '/leave/outside',
+    label: 'Students Outside',
+    icon: UsersRound,
+    roles: [
+      'SuperAdmin',
+      'Admin',
+      'CampusCoordinator',
+      'GateOfficer',
+      'Mentor',
+      'Viewer',
+    ],
+  },
+  {
+    href: '/leave/types',
+    label: 'Leave Types',
+    icon: Tags,
+    roles: ['SuperAdmin', 'Admin'],
+  },
+  {
+    href: '/leave/print',
+    label: 'Print Passes',
+    icon: Printer,
+    roles: [
+      'SuperAdmin',
+      'Admin',
+      'CampusCoordinator',
+      'ProgramCoordinator',
+      'Mentor',
+    ],
+  },
+  {
+    href: '/leave/reports',
+    label: 'Leave Reports',
+    icon: FileBarChart,
+    roles: [
+      'SuperAdmin',
+      'Admin',
+      'CampusCoordinator',
+      'ProgramCoordinator',
+      'Viewer',
+    ],
+  },
+  {
     href: '/mentors',
     label: 'Staff',
     icon: Users,
@@ -152,6 +221,7 @@ const NAV: NavItem[] = [
       'ProgramCoordinator',
       'Mentor',
       'FoodStaff',
+      'GateOfficer',
       'Viewer',
     ],
   },
@@ -196,7 +266,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    setUser(readStoredUser());
+    function syncUser() {
+      setUser(readStoredUser());
+    }
+    syncUser();
+    window.addEventListener('focus', syncUser);
+    window.addEventListener('storage', syncUser);
+    window.addEventListener('imms-auth', syncUser);
+    return () => {
+      window.removeEventListener('focus', syncUser);
+      window.removeEventListener('storage', syncUser);
+      window.removeEventListener('imms-auth', syncUser);
+    };
   }, []);
 
   const nav = useMemo(() => {
@@ -204,6 +285,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (roles.includes('SuperAdmin')) return NAV;
     return NAV.filter((item) => item.roles.some((r) => roles.includes(r)));
   }, [user]);
+
+  const activeHref = useMemo(() => {
+    const matches = nav
+      .filter((n) => pathname === n.href || pathname.startsWith(`${n.href}/`))
+      .sort((a, b) => b.href.length - a.href.length);
+    return matches[0]?.href;
+  }, [nav, pathname]);
+
+  const searchLabel = useMemo(() => {
+    const roles = user?.roles ?? [];
+    if (roles.includes('GateOfficer')) return 'Open gate scanner';
+    if (roles.includes('FoodStaff')) return 'Open meal station';
+    if (pathname.startsWith('/meals')) return 'Find student ID…';
+    if (pathname.startsWith('/gate')) return 'Scan barcode…';
+    return 'Find a student…';
+  }, [pathname, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -222,7 +319,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const q = search.trim();
     if (!q) return;
     const roles = user?.roles ?? [];
-    if (roles.includes('FoodStaff')) {
+    if (roles.includes('GateOfficer')) {
+      router.push('/gate');
+    } else if (roles.includes('FoodStaff')) {
       router.push('/meals');
     } else {
       router.push(`/students?q=${encodeURIComponent(q)}`);
@@ -256,7 +355,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
-                className={pathname.startsWith(item.href) ? 'active' : undefined}
+                className={activeHref === item.href ? 'active' : undefined}
                 onClick={() => setNavOpen(false)}
               >
                 <Icon aria-hidden strokeWidth={1.75} />
@@ -293,10 +392,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <input
               className="input"
               type="search"
-              placeholder="Search students…"
+              placeholder={searchLabel}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              aria-label="Search students"
+              aria-label={searchLabel}
             />
           </form>
 

@@ -57,6 +57,8 @@ export class UsersService {
       organizationIds?: string[];
       campusIds?: string[];
       programIds?: string[];
+      /** Meal staff (Mentor / FoodStaff) must have at least one campus to scan. */
+      requireCampus?: boolean;
     },
   ) {
     if (!isStrongPassword(data.password)) {
@@ -67,6 +69,11 @@ export class UsersService {
     }
     if (data.roleNames.includes('SuperAdmin') && !actor.isSuperAdmin) {
       throw new ForbiddenException('Cannot assign Super Admin role');
+    }
+    if (data.requireCampus && !(data.campusIds?.length)) {
+      throw new BadRequestException(
+        'Assign at least one campus so this staff member can scan students.',
+      );
     }
 
     for (const orgId of data.organizationIds ?? []) {
@@ -238,6 +245,60 @@ export class UsersService {
         status: true,
       },
     });
+  }
+
+  /** Update mentor / food staff profile and campus assignments. */
+  async updateStaff(
+    actor: AuthUser,
+    userId: string,
+    data: Partial<{ fullName: string; phone: string; campusIds: string[] }>,
+  ) {
+    await this.assertCanManageUser(actor, userId);
+    if (data.campusIds !== undefined && data.campusIds.length === 0) {
+      throw new BadRequestException(
+        'Assign at least one campus so this staff member can scan students.',
+      );
+    }
+
+    if (data.campusIds) {
+      await this.prisma.$transaction([
+        this.prisma.userCampusAssignment.deleteMany({ where: { userId } }),
+        this.prisma.userCampusAssignment.createMany({
+          data: data.campusIds.map((campusId) => ({ userId, campusId })),
+        }),
+      ]);
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(data.fullName !== undefined ? { fullName: data.fullName } : {}),
+        ...(data.phone !== undefined ? { phone: data.phone } : {}),
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        status: true,
+        campusAssignments: true,
+      },
+    });
+
+    await this.audit.log({
+      userId: actor.id,
+      action: 'User.Update',
+      resource: 'User',
+      resourceId: userId,
+      newValue: {
+        fullName: data.fullName,
+        phone: data.phone,
+        campusIds: data.campusIds,
+      },
+    });
+
+    return updated;
   }
 
   async softDelete(actor: AuthUser, userId: string) {

@@ -9,6 +9,7 @@ import { CampusesModule } from './modules/campuses/campuses.module';
 import { PlatformConfigModule } from './modules/config/config.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ImportModule } from './modules/import/import.module';
+import { LeaveModule } from './modules/leave/leave.module';
 import { MealsModule } from './modules/meals/meals.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { ProgramsModule } from './modules/programs/programs.module';
@@ -44,6 +45,7 @@ import { PrismaModule } from './prisma/prisma.module';
     AcademicYearsModule,
     StudentsModule,
     ImportModule,
+    LeaveModule,
     MealsModule,
     DashboardModule,
     ReportsModule,

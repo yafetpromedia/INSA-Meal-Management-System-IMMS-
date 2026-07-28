@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { StudentStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -10,6 +10,7 @@ import {
   resolveActiveOrganizationId,
   resolveCampusId,
   resolveProgramId,
+  scopeCampusFilter,
   scopeOrganizationFilter,
 } from '../auth/auth.types';
 
@@ -153,10 +154,23 @@ export class StudentsService {
 
   async getByBarcode(user: AuthUser, barcode: string, organizationId?: string) {
     const orgId = resolveActiveOrganizationId(user, organizationId);
-    const scope = {
+    if (!user.isSuperAdmin && user.campusIds.length === 0) {
+      throw new ForbiddenException(
+        'No campus assigned to your account. Ask an admin to assign your campus, then sign in again.',
+      );
+    }
+
+    const orgScope = {
       deletedAt: null as null,
       ...(orgId ? { organizationId: orgId } : {}),
       ...scopeOrganizationFilter(user),
+    };
+    const scope = {
+      ...orgScope,
+      ...scopeCampusFilter(user),
+      ...(user.programIds.length && !user.isSuperAdmin
+        ? { programId: { in: user.programIds } }
+        : {}),
     };
     const include = {
       campus: true,
@@ -165,16 +179,20 @@ export class StudentsService {
       organization: true,
     } as const;
 
+    const key = barcode.trim();
     let student = await this.prisma.student.findFirst({
       where: {
         ...scope,
-        OR: [{ barcode }, { studentId: barcode }],
+        OR: [
+          { barcode: { equals: key, mode: 'insensitive' } },
+          { studentId: { equals: key, mode: 'insensitive' } },
+        ],
       },
       include,
     });
 
     if (!student) {
-      const short = barcode.trim();
+      const short = key.replace(/^#+/, '');
       const looksShort =
         short.length >= 3 &&
         short.length <= 12 &&
@@ -189,6 +207,8 @@ export class StudentsService {
               { barcode: { contains: `-${short}-`, mode: 'insensitive' } },
               { studentId: { endsWith: `-${short}`, mode: 'insensitive' } },
               { barcode: { endsWith: `-${short}`, mode: 'insensitive' } },
+              { studentId: { startsWith: `${short}-`, mode: 'insensitive' } },
+              { barcode: { startsWith: `${short}-`, mode: 'insensitive' } },
             ],
           },
           include,
@@ -203,15 +223,24 @@ export class StudentsService {
       }
     }
 
-    if (!student) throw new NotFoundException('Student Not Found');
-    if (!user.isSuperAdmin && !user.campusIds.includes(student.campusId)) {
-      throw new NotFoundException('Student Not Found');
-    }
-    if (
-      user.programIds.length &&
-      !user.isSuperAdmin &&
-      !user.programIds.includes(student.programId)
-    ) {
+    if (!student) {
+      const outside = await this.prisma.student.findFirst({
+        where: {
+          ...orgScope,
+          OR: [
+            { barcode: { equals: key, mode: 'insensitive' } },
+            { studentId: { equals: key, mode: 'insensitive' } },
+          ],
+        },
+        select: { studentId: true, campus: { select: { shortName: true, name: true } } },
+      });
+      if (outside) {
+        const campusLabel =
+          outside.campus?.shortName || outside.campus?.name || 'another campus';
+        throw new ForbiddenException(
+          `Student ${outside.studentId} belongs to ${campusLabel}, which is outside your campus access.`,
+        );
+      }
       throw new NotFoundException('Student Not Found');
     }
     return student;

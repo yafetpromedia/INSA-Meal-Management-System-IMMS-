@@ -26,9 +26,18 @@ const FORMATS = [
   Html5QrcodeSupportedFormats.DATA_MATRIX,
 ];
 
+function isTransitionRace(err: unknown) {
+  const raw = err instanceof Error ? err.message : String(err ?? '');
+  return /already under transition|cannot transition to a new state/i.test(raw);
+}
+
 function friendlyCameraError(err: unknown) {
   const raw = err instanceof Error ? err.message : String(err ?? '');
   const lower = raw.toLowerCase();
+  if (isTransitionRace(err)) {
+    // html5-qrcode race (Strict Mode / rapid start-stop) — not a real camera failure
+    return '';
+  }
   if (lower.includes('permission') || lower.includes('notallowed') || lower.includes('denied')) {
     return 'Camera permission blocked. Allow camera for this site, then tap Start camera.';
   }
@@ -69,6 +78,7 @@ export function BarcodeCamera({ onDetect, paused = false, enabled = true, onEnab
   const [error, setError] = useState('');
   const [starting, setStarting] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+  const opChainRef = useRef(Promise.resolve());
 
   useEffect(() => {
     onDetectRef.current = onDetect;
@@ -82,6 +92,11 @@ export function BarcodeCamera({ onDetect, paused = false, enabled = true, onEnab
     let cancelled = false;
     const runId = ++runIdRef.current;
 
+    function enqueue(op: () => Promise<void>) {
+      opChainRef.current = opChainRef.current.then(op, op);
+      return opChainRef.current;
+    }
+
     async function stopScanner() {
       const scanner = scannerRef.current;
       scannerRef.current = null;
@@ -89,8 +104,10 @@ export function BarcodeCamera({ onDetect, paused = false, enabled = true, onEnab
       try {
         if (scanner.isScanning) await scanner.stop();
       } catch {
-        // ignore
+        // ignore stop races
       }
+      // Let html5-qrcode finish its internal transition before clear/start
+      await new Promise((r) => window.setTimeout(r, 80));
       try {
         scanner.clear();
       } catch {
@@ -140,7 +157,7 @@ export function BarcodeCamera({ onDetect, paused = false, enabled = true, onEnab
       setRunning(false);
 
       // Let the viewport mount (and settle after React Strict Mode remount)
-      await new Promise((r) => window.setTimeout(r, 120));
+      await new Promise((r) => window.setTimeout(r, 180));
       if (cancelled || runId !== runIdRef.current) return;
 
       const el = document.getElementById(regionId);
@@ -184,11 +201,13 @@ export function BarcodeCamera({ onDetect, paused = false, enabled = true, onEnab
           } catch {
             // ignore between attempts
           }
+          await new Promise((r) => window.setTimeout(r, isTransitionRace(err) ? 200 : 60));
         }
       }
 
       if (!cancelled && runId === runIdRef.current) {
-        setError(friendlyCameraError(lastErr));
+        const msg = friendlyCameraError(lastErr);
+        if (msg) setError(msg);
         setRunning(false);
         try {
           scanner.clear();
@@ -200,9 +219,14 @@ export function BarcodeCamera({ onDetect, paused = false, enabled = true, onEnab
       setStarting(false);
     }
 
-    if (enabled) void startScanner();
-    else {
-      void stopScanner().then(() => {
+    if (enabled) {
+      void enqueue(async () => {
+        if (cancelled || runId !== runIdRef.current) return;
+        await startScanner();
+      });
+    } else {
+      void enqueue(async () => {
+        await stopScanner();
         if (!cancelled) {
           setRunning(false);
           setStarting(false);
@@ -212,7 +236,9 @@ export function BarcodeCamera({ onDetect, paused = false, enabled = true, onEnab
 
     return () => {
       cancelled = true;
-      void stopScanner();
+      void enqueue(async () => {
+        await stopScanner();
+      });
     };
   }, [enabled, regionId, retryKey]);
 
