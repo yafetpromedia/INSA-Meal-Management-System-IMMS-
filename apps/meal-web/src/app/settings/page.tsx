@@ -505,7 +505,7 @@ export default function SettingsPage() {
             {(
               [
                 ['showLogo', 'Show logo'],
-                ['showBarcode', 'Show barcode'],
+                ['showBarcode', 'Show barcode (filled passes only — hidden on blank templates)'],
                 ['showQr', 'Show verification mark'],
                 ['showCampus', 'Show campus'],
                 ['showProgram', 'Show program'],

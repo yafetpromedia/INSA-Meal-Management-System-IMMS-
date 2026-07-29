@@ -22,8 +22,9 @@ export const GATE_PASS_SETTINGS_KEY = 'settings.gatePass';
 
 export const DEFAULT_GATE_PASS_SETTINGS: GatePassTemplateSettings = {
   headerText: 'INSA Summer Camp',
-  subHeaderText: 'Gate Pass',
-  footerText: 'Present this pass with your student ID at the gate.',
+  subHeaderText: 'Gate Pass · የመውጫ ፈቃድ',
+  footerText:
+    'Present this pass with your student ID at the gate. · ይህን ፈቃድ ከተማሪ መታወቂያ ጋር በበሩ ያሳዩ።',
   cardsPerPage: 8,
   showLogo: true,
   showBarcode: true,
@@ -35,6 +36,35 @@ export const DEFAULT_GATE_PASS_SETTINGS: GatePassTemplateSettings = {
   showCampus: true,
   showProgram: true,
 };
+
+/** Bilingual field labels (English · Amharic) for printable gate passes. */
+export const GATE_PASS_LABELS = {
+  studentName: { en: 'Student Name', am: 'የተማሪ ስም' },
+  studentId: { en: 'Student ID', am: 'የተማሪ መ.ቁ.' },
+  barcode: { en: 'Barcode', am: 'ባርኮድ' },
+  campus: { en: 'Campus', am: 'ካምፓስ' },
+  program: { en: 'Program', am: 'ፕሮግራም' },
+  leaveType: { en: 'Leave Type', am: 'የፈቃድ አይነት' },
+  destination: { en: 'Destination', am: 'መድረሻ' },
+  exitTime: { en: 'Exit Time', am: 'የመውጫ ሰዓት' },
+  expectedReturn: { en: 'Expected Return', am: 'የመመለሻ ሰዓት' },
+  date: { en: 'Date', am: 'ቀን' },
+  approvedBy: { en: 'Approved By', am: 'ያፀደቀው' },
+  gateOfficer: { en: 'Gate Officer', am: 'የበር ኃላፊ' },
+  remarks: { en: 'Remarks', am: 'ማስታወሻ' },
+  notes: { en: 'Notes', am: 'ማስታወሻ' },
+  signature: { en: 'Signature', am: 'ፊርማ' },
+  stamp: { en: 'Stamp', am: 'ማህተም' },
+  verification: { en: 'Verification', am: 'ማረጋገጫ' },
+  passNo: { en: 'Pass No.', am: 'የፈቃድ ቁ.' },
+} as const;
+
+export type GatePassLabelKey = keyof typeof GATE_PASS_LABELS;
+
+export function bilingualLabel(key: GatePassLabelKey) {
+  const { en, am } = GATE_PASS_LABELS[key];
+  return `${en} · ${am}`;
+}
 
 export type GatePassCardData = {
   leaveNumber: string;
@@ -126,11 +156,25 @@ export function mergeGatePassSettings(
   if (!raw || typeof raw !== 'object') return base;
   const o = raw as Record<string, unknown>;
   const layout = Number(o.cardsPerPage);
+
+  // Upgrade legacy English-only sub-header/footer to bilingual (keep camp name English-only)
+  let headerText =
+    typeof o.headerText === 'string' ? o.headerText : base.headerText;
+  let subHeaderText =
+    typeof o.subHeaderText === 'string' ? o.subHeaderText : base.subHeaderText;
+  let footerText = typeof o.footerText === 'string' ? o.footerText : base.footerText;
+  if (headerText === 'INSA Summer Camp · የኢንሳ የበጋ ካምፕ') {
+    headerText = 'INSA Summer Camp';
+  }
+  if (subHeaderText === 'Gate Pass') subHeaderText = base.subHeaderText;
+  if (footerText === 'Present this pass with your student ID at the gate.') {
+    footerText = base.footerText;
+  }
+
   return {
-    headerText: typeof o.headerText === 'string' ? o.headerText : base.headerText,
-    subHeaderText:
-      typeof o.subHeaderText === 'string' ? o.subHeaderText : base.subHeaderText,
-    footerText: typeof o.footerText === 'string' ? o.footerText : base.footerText,
+    headerText,
+    subHeaderText,
+    footerText,
     cardsPerPage: layout === 1 || layout === 4 || layout === 8 ? layout : base.cardsPerPage,
     showLogo: typeof o.showLogo === 'boolean' ? o.showLogo : base.showLogo,
     showBarcode: typeof o.showBarcode === 'boolean' ? o.showBarcode : base.showBarcode,

@@ -140,7 +140,15 @@ export async function apiWithMeta<T>(
   }
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
 
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  const res = await fetch(`${API_URL}${path}`, { ...options, headers }).catch((err: unknown) => {
+    const raw = err instanceof Error ? err.message : String(err ?? '');
+    if (/failed to fetch|networkerror|load failed|network request failed/i.test(raw)) {
+      throw new Error(
+        `Cannot reach the API at ${API_URL}. Start meal-api (port 4000) and open the app from http://localhost:3000.`,
+      );
+    }
+    throw err instanceof Error ? err : new Error(raw || 'Network request failed');
+  });
   const payload = await res.json().catch(() => ({}));
 
   if (res.status === 401 && !retried && !path.startsWith('/auth/')) {

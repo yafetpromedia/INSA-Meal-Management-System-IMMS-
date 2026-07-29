@@ -2,7 +2,12 @@
 
 import { BrandLogo } from '@/components/BrandLogo';
 import { formatLeaveDate, formatLeaveDateTime } from '@/lib/leave';
-import type { GatePassCardData, GatePassTemplateSettings } from '@/lib/gate-pass-print';
+import {
+  GATE_PASS_LABELS,
+  type GatePassCardData,
+  type GatePassLabelKey,
+  type GatePassTemplateSettings,
+} from '@/lib/gate-pass-print';
 
 type Props = {
   data: GatePassCardData;
@@ -11,20 +16,34 @@ type Props = {
   slot?: number;
 };
 
+function BilingualLabel({ labelKey }: { labelKey: GatePassLabelKey }) {
+  const { en, am } = GATE_PASS_LABELS[labelKey];
+  return (
+    <span className="gpc-label">
+      <span className="gpc-label-en">{en}</span>
+      <span className="gpc-label-am" lang="am">
+        {am}
+      </span>
+    </span>
+  );
+}
+
 function Field({
-  label,
+  labelKey,
   value,
   blank,
   mono,
+  wide,
 }: {
-  label: string;
+  labelKey: GatePassLabelKey;
   value?: string;
   blank?: boolean;
   mono?: boolean;
+  wide?: boolean;
 }) {
   return (
-    <div className="gpc-field">
-      <span className="gpc-label">{label}</span>
+    <div className={`gpc-field ${wide ? 'is-wide' : ''}`}>
+      <BilingualLabel labelKey={labelKey} />
       <span className={`gpc-value ${mono ? 'is-mono' : ''} ${blank ? 'is-blank' : ''}`}>
         {blank ? '' : value || '—'}
       </span>
@@ -38,6 +57,8 @@ export function GatePassCard({ data, settings, slot }: Props) {
   const verify = blank
     ? ''
     : data.leaveNumber || data.barcode || data.studentId;
+  // Handwritten cards cannot include a barcode — only show on filled digital/printouts
+  const showBarcode = settings.showBarcode && !blank;
 
   return (
     <article className={`gpc-card ${blank ? 'is-blank-card' : ''}`}>
@@ -56,60 +77,63 @@ export function GatePassCard({ data, settings, slot }: Props) {
           {!blank && data.leaveNumber ? (
             <strong className="gpc-number">{data.leaveNumber}</strong>
           ) : blank ? (
-            <span className="gpc-number is-blank" />
+            <>
+              <BilingualLabel labelKey="passNo" />
+              <span className="gpc-number is-blank" />
+            </>
           ) : null}
         </div>
       </header>
 
       <div className="gpc-body">
-        <Field label="Student Name" value={data.studentName} blank={blank} />
-        <Field label="Student ID" value={data.studentId} blank={blank} mono />
-        {settings.showBarcode ? (
-          <Field label="Barcode" value={data.barcode} blank={blank} mono />
+        <Field labelKey="studentName" value={data.studentName} blank={blank} />
+        <Field labelKey="studentId" value={data.studentId} blank={blank} mono />
+        {showBarcode ? (
+          <Field labelKey="barcode" value={data.barcode} blank={false} mono />
         ) : null}
         {settings.showCampus ? (
-          <Field label="Campus" value={data.campus} blank={blank} />
+          <Field labelKey="campus" value={data.campus} blank={blank} />
         ) : null}
         {settings.showProgram ? (
-          <Field label="Program" value={data.program} blank={blank} />
+          <Field labelKey="program" value={data.program} blank={blank} />
         ) : null}
-        <Field label="Leave Type" value={data.leaveType} blank={blank} />
+        <Field labelKey="leaveType" value={data.leaveType} blank={blank} />
         {settings.showDestination ? (
-          <Field label="Destination" value={data.destination} blank={blank} />
+          <Field labelKey="destination" value={data.destination} blank={blank} />
         ) : null}
         <Field
-          label="Exit Time"
+          labelKey="exitTime"
           value={blank ? '' : formatLeaveDateTime(data.exitTime)}
           blank={blank}
         />
         <Field
-          label="Expected Return"
+          labelKey="expectedReturn"
           value={blank ? '' : formatLeaveDateTime(data.returnTime)}
           blank={blank}
         />
         <Field
-          label="Date"
+          labelKey="date"
           value={blank ? '' : formatLeaveDate(data.dateLabel || data.exitTime)}
           blank={blank}
         />
-        <Field label="Approved By" value={data.approvedBy} blank={blank} />
+        <Field labelKey="approvedBy" value={data.approvedBy} blank={blank} />
         {settings.showNotes && !blank && data.notes ? (
-          <Field label="Notes" value={data.notes} />
+          <Field labelKey="notes" value={data.notes} wide />
         ) : null}
-        {blank ? <Field label="Gate Officer" blank /> : null}
-        {blank ? <Field label="Remarks" blank /> : null}
+        {blank ? <Field labelKey="gateOfficer" blank /> : null}
+        {blank ? <Field labelKey="remarks" blank wide /> : null}
       </div>
 
       <footer className="gpc-foot">
         {settings.showSignature ? (
           <div className="gpc-sign">
-            <span className="gpc-label">Signature</span>
+            <BilingualLabel labelKey="signature" />
             <span className="gpc-line" />
           </div>
         ) : null}
         {settings.showStamp ? (
           <div className="gpc-stamp">
-            <span className="gpc-label">Stamp</span>
+            <BilingualLabel labelKey="stamp" />
           </div>
         ) : null}
         <div className="gpc-verify">
@@ -128,7 +152,7 @@ export function GatePassCard({ data, settings, slot }: Props) {
             </div>
           ) : null}
           <div>
-            <span className="gpc-label">Verification</span>
+            <BilingualLabel labelKey="verification" />
             <strong className={`gpc-verify-code ${blank ? 'is-blank' : ''}`}>
               {blank ? '' : verify}
             </strong>

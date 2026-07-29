@@ -37,8 +37,39 @@ async function bootstrap() {
     type: VersioningType.URI,
     defaultVersion: '1',
   });
+  const corsFromEnv = process.env.CORS_ORIGIN?.split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const defaultOrigins = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3001',
+  ];
   app.enableCors({
-    origin: process.env.CORS_ORIGIN?.split(',') ?? ['http://localhost:3000'],
+    origin: (origin, callback) => {
+      // Non-browser / same-origin requests
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+      const allowed = corsFromEnv?.length ? corsFromEnv : defaultOrigins;
+      if (allowed.includes('*') || allowed.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      // Local / LAN web apps in development (phone testing on Wi‑Fi)
+      if (
+        !isProd &&
+        /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$/i.test(
+          origin,
+        )
+      ) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`CORS blocked for origin: ${origin}`), false);
+    },
     credentials: true,
   });
   app.useGlobalPipes(

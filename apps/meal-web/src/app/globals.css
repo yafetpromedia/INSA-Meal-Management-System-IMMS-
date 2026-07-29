@@ -2782,10 +2782,35 @@ textarea {
 }
 
 .gpc-label {
-  font-size: 0.65em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1mm;
+  font-size: 0.62em;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: #555;
+  line-height: 1.15;
+}
+
+.gpc-label-en {
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #555;
+}
+
+.gpc-label-am {
+  font-weight: 500;
+  font-size: 1.05em;
+  color: #333;
+}
+
+.gpc-field.is-wide {
+  grid-column: 1 / -1;
+}
+
+.gpc-meta .gpc-label {
+  text-align: right;
+  margin-bottom: 0.5mm;
 }
 
 .gpc-value {
