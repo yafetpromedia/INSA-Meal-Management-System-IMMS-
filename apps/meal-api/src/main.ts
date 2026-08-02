@@ -47,7 +47,7 @@ async function bootstrap() {
     'http://127.0.0.1:3001',
   ];
   app.enableCors({
-    origin: (origin, callback) => {
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
       // Non-browser / same-origin requests
       if (!origin) {
         callback(null, true);

@@ -1,9 +1,15 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ImportJobStatus, ImportMode, StudentStatus } from '@prisma/client';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   AuthUser,
+  assertCampusAccess,
   assertOrgAccess,
   resolveActiveOrganizationId,
   scopeOrganizationFilter,
@@ -76,6 +82,9 @@ export class ImportService {
     }
     if (!assertOrgAccess(user, data.organizationId)) {
       throw new NotFoundException('Organization not found');
+    }
+    if (!assertCampusAccess(user, data.campusId)) {
+      throw new ForbiddenException('Campus not in your scope');
     }
 
     const [campus, program, year] = await Promise.all([

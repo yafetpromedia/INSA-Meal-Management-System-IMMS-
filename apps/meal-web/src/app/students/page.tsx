@@ -226,7 +226,7 @@ function StudentsContent() {
     setBusyDelete(true);
     try {
       await api(`/students/${deleting.id}`, { method: 'DELETE' });
-      push({ kind: 'success', title: 'Student archived' });
+      push({ kind: 'success', title: 'Student deleted permanently' });
       setDeleting(null);
       await loadList();
     } catch (err) {
@@ -249,7 +249,9 @@ function StudentsContent() {
         <div>
           <h1 className="page-title">Students</h1>
           <p className="page-sub">
-            {canManage ? 'Search, add, edit, and archive the meal roster.' : 'View and search students in your scope.'}
+            {canManage
+              ? 'Search, add, edit, and permanently delete students from the roster.'
+              : 'View and search students in your scope.'}
           </p>
         </div>
         {canManage ? (
@@ -340,7 +342,7 @@ function StudentsContent() {
                             </Button>
                             <Button type="button" variant="ghost" size="sm" onClick={() => setDeleting(s)}>
                               <Trash2 size={14} strokeWidth={1.75} aria-hidden />
-                              Archive
+                              Delete
                             </Button>
                           </>
                         ) : null}
@@ -493,9 +495,13 @@ function StudentsContent() {
 
       <ConfirmDialog
         open={!!deleting}
-        title="Archive student?"
-        message={deleting ? `Archive “${deleting.fullName}” (${deleting.studentId})?` : ''}
-        confirmLabel="Archive"
+        title="Delete student permanently?"
+        message={
+          deleting
+            ? `Delete “${deleting.fullName}” (${deleting.studentId}) forever? Meal history, leave, and related records for this student will also be removed. This cannot be undone.`
+            : ''
+        }
+        confirmLabel="Delete permanently"
         loading={busyDelete}
         onConfirm={() => void onDelete()}
         onClose={() => setDeleting(null)}

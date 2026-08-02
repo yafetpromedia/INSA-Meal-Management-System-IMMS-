@@ -1,5 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
-import { MealRecordStatus, StudentStatus } from '@prisma/client';
+import {
+  DisciplinaryActionStatus,
+  IncidentStatus,
+  MealRecordStatus,
+  StudentStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   ethiopiaCalendarDate,
@@ -350,6 +355,17 @@ export class MealsService {
       };
     }
 
+    const disciplinaryAlert = await this.disciplinaryMealAlert(student.id, student.organizationId);
+    if (disciplinaryAlert.mealRestrictionActive) {
+      return {
+        eligible: false,
+        reason: 'Active meal restriction (disciplinary)',
+        student,
+        mealSession: null,
+        disciplinaryAlert,
+      };
+    }
+
     const mealCode = await this.currentMeal(student.organizationId, student.campusId);
     if (!mealCode) {
       return {
@@ -395,6 +411,43 @@ export class MealsService {
       student,
       mealSession: session?.name ?? mealCode,
       mealCode,
+      disciplinaryAlert,
+    };
+  }
+
+  private async disciplinaryMealAlert(studentId: string, organizationId: string) {
+    const openStatuses: IncidentStatus[] = [
+      IncidentStatus.OPEN,
+      IncidentStatus.UNDER_INVESTIGATION,
+      IncidentStatus.AWAITING_DECISION,
+      IncidentStatus.ACTION_ASSIGNED,
+      IncidentStatus.APPEALED,
+    ];
+    const openCases = await this.prisma.disciplinaryIncident.count({
+      where: {
+        studentId,
+        deletedAt: null,
+        status: { in: openStatuses },
+      },
+    });
+    const mealRestricted = await this.prisma.disciplinaryAction.count({
+      where: {
+        organizationId,
+        status: {
+          in: [DisciplinaryActionStatus.PENDING, DisciplinaryActionStatus.ACTIVE],
+        },
+        actionType: { affectsMeals: true, deletedAt: null },
+        incident: {
+          studentId,
+          deletedAt: null,
+          status: { in: openStatuses },
+        },
+      },
+    });
+    return {
+      hasOpenCase: openCases > 0,
+      openCases,
+      mealRestrictionActive: mealRestricted > 0,
     };
   }
 

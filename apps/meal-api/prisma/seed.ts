@@ -54,6 +54,21 @@ const PERMISSIONS: Array<{ key: string; module: string; action: string }> = [
   { key: 'Leave.Report', module: 'Leave', action: 'Report' },
   { key: 'Gate.Scan', module: 'Gate', action: 'Scan' },
   { key: 'Gate.View', module: 'Gate', action: 'View' },
+  { key: 'Disciplinary.View', module: 'Disciplinary', action: 'View' },
+  { key: 'Disciplinary.Create', module: 'Disciplinary', action: 'Create' },
+  { key: 'Disciplinary.Update', module: 'Disciplinary', action: 'Update' },
+  { key: 'Disciplinary.Investigate', module: 'Disciplinary', action: 'Investigate' },
+  { key: 'Disciplinary.Decide', module: 'Disciplinary', action: 'Decide' },
+  { key: 'Disciplinary.ManageTypes', module: 'Disciplinary', action: 'ManageTypes' },
+  { key: 'Disciplinary.Report', module: 'Disciplinary', action: 'Report' },
+  { key: 'Activity.View', module: 'Activity', action: 'View' },
+  { key: 'Activity.Create', module: 'Activity', action: 'Create' },
+  { key: 'Activity.Update', module: 'Activity', action: 'Update' },
+  { key: 'Activity.Submit', module: 'Activity', action: 'Submit' },
+  { key: 'Activity.Approve', module: 'Activity', action: 'Approve' },
+  { key: 'Activity.ManageCategories', module: 'Activity', action: 'ManageCategories' },
+  { key: 'Activity.Export', module: 'Activity', action: 'Export' },
+  { key: 'Activity.Delete', module: 'Activity', action: 'Delete' },
 ];
 
 const ROLE_PERMISSIONS: Record<string, string[] | '*'> = {
@@ -93,6 +108,21 @@ const ROLE_PERMISSIONS: Record<string, string[] | '*'> = {
     'Leave.Report',
     'Gate.Scan',
     'Gate.View',
+    'Disciplinary.View',
+    'Disciplinary.Create',
+    'Disciplinary.Update',
+    'Disciplinary.Investigate',
+    'Disciplinary.Decide',
+    'Disciplinary.ManageTypes',
+    'Disciplinary.Report',
+    'Activity.View',
+    'Activity.Create',
+    'Activity.Update',
+    'Activity.Submit',
+    'Activity.Approve',
+    'Activity.ManageCategories',
+    'Activity.Export',
+    'Activity.Delete',
   ],
   CampusCoordinator: [
     'Dashboard.View',
@@ -113,6 +143,8 @@ const ROLE_PERMISSIONS: Record<string, string[] | '*'> = {
     'Report.View',
     'Report.Export',
     'User.View',
+    'User.Create',
+    'User.Update',
     'User.Assign',
     'AuditLog.View',
     'Leave.View',
@@ -122,10 +154,23 @@ const ROLE_PERMISSIONS: Record<string, string[] | '*'> = {
     'Leave.Cancel',
     'Leave.Report',
     'Gate.View',
+    'Disciplinary.View',
+    'Disciplinary.Create',
+    'Disciplinary.Update',
+    'Disciplinary.Investigate',
+    'Disciplinary.Decide',
+    'Disciplinary.Report',
+    'Activity.View',
+    'Activity.Create',
+    'Activity.Update',
+    'Activity.Submit',
+    'Activity.Approve',
+    'Activity.Export',
   ],
   ProgramCoordinator: [
     'Dashboard.View',
     'Organization.View',
+    'Campus.View',
     'Program.View',
     'AcademicYear.View',
     'Student.View',
@@ -136,9 +181,19 @@ const ROLE_PERMISSIONS: Record<string, string[] | '*'> = {
     'Leave.View',
     'Leave.Create',
     'Leave.Report',
+    'Disciplinary.View',
+    'Disciplinary.Create',
+    'Disciplinary.Report',
+    'Activity.View',
+    'Activity.Create',
+    'Activity.Update',
+    'Activity.Submit',
   ],
   Mentor: [
     'Dashboard.View',
+    'Campus.View',
+    'Program.View',
+    'AcademicYear.View',
     'Student.View',
     'Student.Search',
     'Meal.View',
@@ -146,7 +201,16 @@ const ROLE_PERMISSIONS: Record<string, string[] | '*'> = {
     'Report.View',
     'Leave.View',
     'Leave.Create',
+    'Leave.Update',
+    'Leave.Approve',
+    'Leave.Cancel',
     'Gate.View',
+    'Disciplinary.View',
+    'Disciplinary.Create',
+    'Activity.View',
+    'Activity.Create',
+    'Activity.Update',
+    'Activity.Submit',
   ],
   FoodStaff: [
     'Dashboard.View',
@@ -154,6 +218,7 @@ const ROLE_PERMISSIONS: Record<string, string[] | '*'> = {
     'Meal.View',
     'Meal.Create',
     'Leave.View',
+    'Activity.View',
   ],
   GateOfficer: [
     'Dashboard.View',
@@ -162,6 +227,8 @@ const ROLE_PERMISSIONS: Record<string, string[] | '*'> = {
     'Leave.View',
     'Gate.Scan',
     'Gate.View',
+    'Disciplinary.View',
+    'Activity.View',
   ],
   Viewer: [
     'Dashboard.View',
@@ -174,6 +241,10 @@ const ROLE_PERMISSIONS: Record<string, string[] | '*'> = {
     'Leave.View',
     'Leave.Report',
     'Gate.View',
+    'Disciplinary.View',
+    'Disciplinary.Report',
+    'Activity.View',
+    'Activity.Export',
   ],
 };
 
@@ -185,8 +256,27 @@ const PLATFORM_MODULES = [
   { key: 'meals', name: 'Meal Distribution', isCore: true, sortOrder: 5 },
   { key: 'meal_history', name: 'Meal History', isCore: true, sortOrder: 6 },
   { key: 'leave', name: 'Leave & Gate Pass', isCore: true, sortOrder: 7 },
-  { key: 'reports', name: 'Reports', isCore: true, sortOrder: 8 },
-  { key: 'audit', name: 'Audit Logs', isCore: true, sortOrder: 9 },
+  { key: 'disciplinary', name: 'Disciplinary Management', isCore: true, sortOrder: 8 },
+  { key: 'activity', name: 'Activity & Daily Reporting', isCore: true, sortOrder: 9 },
+  { key: 'reports', name: 'Reports', isCore: true, sortOrder: 10 },
+  { key: 'audit', name: 'Audit Logs', isCore: true, sortOrder: 11 },
+];
+
+const DEFAULT_ACTIVITY_CATEGORIES = [
+  'Opening Ceremony',
+  'Training Session',
+  'Laboratory Session',
+  'Guest Speaker',
+  'Workshop',
+  'Group Discussion',
+  'Community Service',
+  'Sports & Recreation',
+  'Meal Activity',
+  'Church Activity',
+  'Health & Safety',
+  'Discipline',
+  'Closing Ceremony',
+  'Other',
 ];
 
 const DEFAULT_LEAVE_TYPES = [
@@ -200,6 +290,39 @@ const DEFAULT_LEAVE_TYPES = [
   'Campus Permission',
   'Weekend Leave',
   'Other',
+];
+
+const DEFAULT_INCIDENT_TYPES: Array<{ category: string; name: string }> = [
+  { category: 'Attendance', name: 'Late Return' },
+  { category: 'Attendance', name: 'Unauthorized Exit' },
+  { category: 'Attendance', name: 'Missed Roll Call' },
+  { category: 'Behavior', name: 'Fighting' },
+  { category: 'Behavior', name: 'Disrespect' },
+  { category: 'Behavior', name: 'Bullying' },
+  { category: 'Behavior', name: 'Harassment' },
+  { category: 'Camp Rules', name: 'Phone Misuse' },
+  { category: 'Camp Rules', name: 'Curfew Violation' },
+  { category: 'Camp Rules', name: 'Unauthorized Visitor' },
+  { category: 'Camp Rules', name: 'Property Damage' },
+  { category: 'Academic', name: 'Cheating' },
+  { category: 'Academic', name: 'Disrupting Sessions' },
+  { category: 'Other', name: 'Safety Violation' },
+  { category: 'Other', name: 'Other' },
+];
+
+const DEFAULT_DISCIPLINARY_ACTIONS: Array<{
+  name: string;
+  affectsMeals?: boolean;
+}> = [
+  { name: 'Verbal Warning' },
+  { name: 'Written Warning' },
+  { name: 'Community Service' },
+  { name: 'Extra Assignment' },
+  { name: 'Temporary Meal Restriction', affectsMeals: true },
+  { name: 'Restricted Campus Movement' },
+  { name: 'Parent/Guardian Notification' },
+  { name: 'Suspension' },
+  { name: 'Other' },
 ];
 
 async function seedReferenceCategory(
@@ -303,6 +426,21 @@ async function main() {
       key: 'meal.allow_admin_override',
       value: true,
       description: 'Allow privileged meal overrides with reason',
+    },
+    {
+      key: 'disciplinary.repeat_warning_count',
+      value: 3,
+      description: 'Warnings in window that flag a student for review',
+    },
+    {
+      key: 'disciplinary.repeat_warning_days',
+      value: 30,
+      description: 'Rolling days used for repeat-warning detection',
+    },
+    {
+      key: 'disciplinary.high_severity_repeat_count',
+      value: 2,
+      description: 'High/critical incidents that flag a repeat offender',
     },
   ]) {
     await prisma.businessRule.upsert({
@@ -499,6 +637,60 @@ async function main() {
   for (let i = 0; i < DEFAULT_LEAVE_TYPES.length; i++) {
     const name = DEFAULT_LEAVE_TYPES[i]!;
     await prisma.leaveType.upsert({
+      where: { organizationId_name: { organizationId: org.id, name } },
+      create: {
+        organizationId: org.id,
+        name,
+        active: true,
+        sortOrder: i + 1,
+      },
+      update: { active: true, sortOrder: i + 1 },
+    });
+  }
+
+  for (let i = 0; i < DEFAULT_INCIDENT_TYPES.length; i++) {
+    const item = DEFAULT_INCIDENT_TYPES[i]!;
+    await prisma.incidentType.upsert({
+      where: {
+        organizationId_category_name: {
+          organizationId: org.id,
+          category: item.category,
+          name: item.name,
+        },
+      },
+      create: {
+        organizationId: org.id,
+        category: item.category,
+        name: item.name,
+        active: true,
+        sortOrder: i + 1,
+      },
+      update: { active: true, sortOrder: i + 1 },
+    });
+  }
+
+  for (let i = 0; i < DEFAULT_DISCIPLINARY_ACTIONS.length; i++) {
+    const item = DEFAULT_DISCIPLINARY_ACTIONS[i]!;
+    await prisma.disciplinaryActionType.upsert({
+      where: { organizationId_name: { organizationId: org.id, name: item.name } },
+      create: {
+        organizationId: org.id,
+        name: item.name,
+        affectsMeals: item.affectsMeals ?? false,
+        active: true,
+        sortOrder: i + 1,
+      },
+      update: {
+        active: true,
+        sortOrder: i + 1,
+        affectsMeals: item.affectsMeals ?? false,
+      },
+    });
+  }
+
+  for (let i = 0; i < DEFAULT_ACTIVITY_CATEGORIES.length; i++) {
+    const name = DEFAULT_ACTIVITY_CATEGORIES[i]!;
+    await prisma.activityCategory.upsert({
       where: { organizationId_name: { organizationId: org.id, name } },
       create: {
         organizationId: org.id,

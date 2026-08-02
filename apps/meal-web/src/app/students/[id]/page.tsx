@@ -20,6 +20,14 @@ import {
   leaveStatusTone,
   type LeaveRequest,
 } from '@/lib/leave';
+import {
+  formatIncidentWhen,
+  incidentStatusLabel,
+  incidentStatusTone,
+  severityTone,
+  type DisciplinaryIncident,
+} from '@/lib/disciplinary';
+import { canViewDisciplinary } from '@/lib/rbac';
 
 type MealProfile = {
   student: {
@@ -100,6 +108,8 @@ export default function StudentMealProfilePage() {
   const [profile, setProfile] = useState<MealProfile | null>(null);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [leavesLoading, setLeavesLoading] = useState(false);
+  const [incidents, setIncidents] = useState<DisciplinaryIncident[]>([]);
+  const [incidentsLoading, setIncidentsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -112,6 +122,7 @@ export default function StudentMealProfilePage() {
 
     const orgId = getActiveOrganizationId();
     const q = orgId ? `?organizationId=${orgId}` : '';
+    const showDisciplinary = canViewDisciplinary();
     setLoading(true);
     api<MealProfile>(`/meals/profile/${encodeURIComponent(studentKey)}${q}`)
       .then((data) => {
@@ -122,6 +133,15 @@ export default function StudentMealProfilePage() {
           .then((rows) => setLeaves(Array.isArray(rows) ? rows : []))
           .catch(() => setLeaves([]))
           .finally(() => setLeavesLoading(false));
+        if (showDisciplinary) {
+          setIncidentsLoading(true);
+          api<DisciplinaryIncident[]>(
+            `/disciplinary-incidents/student/${encodeURIComponent(id)}`,
+          )
+            .then((rows) => setIncidents(Array.isArray(rows) ? rows : []))
+            .catch(() => setIncidents([]))
+            .finally(() => setIncidentsLoading(false));
+        }
       })
       .catch((err: Error) => setError(err.message || 'Failed to load profile'))
       .finally(() => setLoading(false));
@@ -373,6 +393,75 @@ export default function StudentMealProfilePage() {
                         </td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className="panel">
+            <h3 className="profile-section-title">Disciplinary history & actions</h3>
+            <p className="muted" style={{ marginTop: 0, marginBottom: 12, fontSize: '0.8125rem' }}>
+              Cases, severity, and punishments / corrective actions for this student.
+            </p>
+            {incidentsLoading ? (
+              <Skeleton height={80} />
+            ) : incidents.length === 0 ? (
+              <EmptyState title="No disciplinary history for this student" />
+            ) : (
+              <div className="table-wrap">
+                <table className="table zebra">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Incident</th>
+                      <th>Severity</th>
+                      <th>Punishment / action</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {incidents.map((row) => {
+                      const latest = row.actions?.[0];
+                      const latestAction = latest?.actionType?.name ?? '—';
+                      const actionStatus = latest?.status;
+                      return (
+                        <tr key={row.id}>
+                          <td>
+                            <Link href={`/disciplinary/${row.id}`} className="table-link">
+                              {formatIncidentWhen(row.occurredAt)}
+                            </Link>
+                            <div className="muted" style={{ fontSize: '0.75rem' }}>
+                              {row.incidentNumber}
+                            </div>
+                          </td>
+                          <td>
+                            <div>{row.incidentType?.name ?? '—'}</div>
+                            <div className="muted" style={{ fontSize: '0.75rem' }}>
+                              {row.incidentType?.category}
+                            </div>
+                          </td>
+                          <td>
+                            <StatusChip tone={severityTone(row.severity)}>
+                              {row.severity}
+                            </StatusChip>
+                          </td>
+                          <td>
+                            <div style={{ fontWeight: 550 }}>{latestAction}</div>
+                            {actionStatus ? (
+                              <div className="muted" style={{ fontSize: '0.75rem' }}>
+                                {actionStatus.replace(/_/g, ' ')}
+                              </div>
+                            ) : null}
+                          </td>
+                          <td>
+                            <StatusChip tone={incidentStatusTone(row.status)}>
+                              {incidentStatusLabel(row.status)}
+                            </StatusChip>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

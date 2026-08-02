@@ -24,7 +24,7 @@ export const DEFAULT_GATE_PASS_SETTINGS: GatePassTemplateSettings = {
   headerText: 'INSA Summer Camp',
   subHeaderText: 'Gate Pass · የመውጫ ፈቃድ',
   footerText:
-    'Present this pass with your student ID at the gate. · ይህን ፈቃድ ከተማሪ መታወቂያ ጋር በበሩ ያሳዩ።',
+    'Scan barcode or verification QR at Gate Scanner. · ባርኮድ ወይም የማረጋገጫ QR በበር ስካነር ይቃኙ።',
   cardsPerPage: 8,
   showLogo: true,
   showBarcode: true,

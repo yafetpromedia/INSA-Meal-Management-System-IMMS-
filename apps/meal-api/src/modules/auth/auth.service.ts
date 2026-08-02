@@ -50,6 +50,7 @@ export class AuthService {
         organizationAssignments: true,
         campusAssignments: true,
         programAssignments: true,
+        mentorProfile: true,
       },
     });
 
@@ -112,6 +113,7 @@ export class AuthService {
             organizationAssignments: true,
             campusAssignments: true,
             programAssignments: true,
+            mentorProfile: true,
           },
         },
       },
@@ -411,6 +413,12 @@ export class AuthService {
       organizationAssignments: Array<{ organizationId: string; isDefault: boolean }>;
       campusAssignments: Array<{ campusId: string }>;
       programAssignments: Array<{ programId: string }>;
+      mentorProfile?: {
+        id: string;
+        campusId: string;
+        programId: string | null;
+        academicYearId: string;
+      } | null;
     },
     tokens: { accessToken: string; refreshToken: string },
   ) {
@@ -418,6 +426,23 @@ export class AuthService {
       user.organizationAssignments.find((o) => o.isDefault)?.organizationId ??
       user.organizationAssignments[0]?.organizationId ??
       null;
+
+    const roles = user.roles.map((r) => r.role.name);
+    let campusIds = user.campusAssignments.map((c) => c.campusId);
+    let programIds = user.programAssignments.map((p) => p.programId);
+    const mentorProfile = user.mentorProfile
+      ? {
+          id: user.mentorProfile.id,
+          campusId: user.mentorProfile.campusId,
+          programId: user.mentorProfile.programId,
+          academicYearId: user.mentorProfile.academicYearId,
+        }
+      : null;
+
+    if (mentorProfile && roles.includes('Mentor')) {
+      campusIds = [mentorProfile.campusId];
+      programIds = mentorProfile.programId ? [mentorProfile.programId] : [];
+    }
 
     return {
       accessToken: tokens.accessToken,
@@ -427,11 +452,12 @@ export class AuthService {
         username: user.username,
         email: user.email,
         fullName: user.fullName,
-        roles: user.roles.map((r) => r.role.name),
+        roles,
         organizationIds: user.organizationAssignments.map((o) => o.organizationId),
         defaultOrganizationId,
-        campusIds: user.campusAssignments.map((c) => c.campusId),
-        programIds: user.programAssignments.map((p) => p.programId),
+        campusIds,
+        programIds,
+        mentorProfile,
       },
     };
   }

@@ -3,11 +3,13 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AcademicYearsModule } from './modules/academic-years/academic-years.module';
+import { ActivityModule } from './modules/activity/activity.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CampusesModule } from './modules/campuses/campuses.module';
 import { PlatformConfigModule } from './modules/config/config.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { DisciplinaryModule } from './modules/disciplinary/disciplinary.module';
 import { ImportModule } from './modules/import/import.module';
 import { LeaveModule } from './modules/leave/leave.module';
 import { MealsModule } from './modules/meals/meals.module';
@@ -46,6 +48,8 @@ import { PrismaModule } from './prisma/prisma.module';
     StudentsModule,
     ImportModule,
     LeaveModule,
+    DisciplinaryModule,
+    ActivityModule,
     MealsModule,
     DashboardModule,
     ReportsModule,

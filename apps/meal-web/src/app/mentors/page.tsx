@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Pencil, Trash2 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
@@ -24,9 +24,19 @@ type Staff = {
   status: string;
   roles: Array<{ role: { name: string } }>;
   campusAssignments?: Array<{ campusId: string }>;
+  mentorProfile?: {
+    campusId: string;
+    programId?: string | null;
+    academicYearId: string;
+    campus?: { id: string; name: string; shortName?: string | null } | null;
+    program?: { id: string; name: string } | null;
+    academicYear?: { id: string; name: string } | null;
+  } | null;
 };
 
 type Campus = { id: string; name: string; shortName: string };
+type Program = { id: string; name: string; campusId: string };
+type AcademicYear = { id: string; name: string; isCurrent?: boolean };
 
 type StaffRole = 'Mentor' | 'FoodStaff' | 'GateOfficer';
 
@@ -62,6 +72,8 @@ export default function StaffPage() {
   const { push } = useToast();
   const [items, setItems] = useState<Staff[]>([]);
   const [campuses, setCampuses] = useState<Campus[]>([]);
+  const [programs, setPrograms] = useState<Program[]>([]);
+  const [years, setYears] = useState<AcademicYear[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [modal, setModal] = useState<'create' | 'edit' | null>(null);
@@ -72,25 +84,37 @@ export default function StaffPage() {
     email: '',
     phone: '',
     password: '',
-    roleName: 'FoodStaff' as StaffRole,
+    roleName: 'Mentor' as StaffRole,
     campusIds: [] as string[],
+    campusId: '',
+    programId: '',
+    academicYearId: '',
   });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<Staff | null>(null);
   const [busyDelete, setBusyDelete] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  const campusPrograms = useMemo(
+    () => programs.filter((p) => !form.campusId || p.campusId === form.campusId),
+    [programs, form.campusId],
+  );
+
   async function load() {
     const orgId = getActiveOrganizationId();
     const q = orgId ? `?organizationId=${orgId}` : '';
     setLoading(true);
     try {
-      const [staff, campusList] = await Promise.all([
+      const [staff, campusList, programList, yearList] = await Promise.all([
         api<Staff[]>('/mentors'),
         api<Campus[]>(`/campuses${q}`),
+        api<Program[]>(`/programs${q}`),
+        api<AcademicYear[]>(`/academic-years${q}`),
       ]);
       setItems(Array.isArray(staff) ? staff : []);
       setCampuses(Array.isArray(campusList) ? campusList : []);
+      setPrograms(Array.isArray(programList) ? programList : []);
+      setYears(Array.isArray(yearList) ? yearList : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load');
     } finally {
@@ -109,14 +133,18 @@ export default function StaffPage() {
   function openCreate() {
     setEditing(null);
     setShowPassword(true);
+    const currentYear = years.find((y) => y.isCurrent) ?? years[0];
     setForm({
       fullName: '',
       username: '',
       email: '',
       phone: '',
       password: generateTempPassword(),
-      roleName: 'FoodStaff',
+      roleName: 'Mentor',
       campusIds: campuses[0] ? [campuses[0].id] : [],
+      campusId: campuses[0]?.id ?? '',
+      programId: '',
+      academicYearId: currentYear?.id ?? '',
     });
     setModal('create');
   }
@@ -137,6 +165,9 @@ export default function StaffPage() {
       password: '',
       roleName: role ?? 'Mentor',
       campusIds: m.campusAssignments?.map((c) => c.campusId) ?? [],
+      campusId: m.mentorProfile?.campusId ?? m.campusAssignments?.[0]?.campusId ?? '',
+      programId: m.mentorProfile?.programId ?? '',
+      academicYearId: m.mentorProfile?.academicYearId ?? '',
     });
     setModal('edit');
   }
@@ -156,15 +187,26 @@ export default function StaffPage() {
     setSaving(true);
     try {
       if (modal === 'create') {
-        if (form.campusIds.length === 0) {
+        if (form.roleName === 'Mentor') {
+          if (!form.campusId || !form.academicYearId) {
+            push({
+              kind: 'error',
+              title: 'Campus & year required',
+              message: 'Mentors must be assigned to one campus and an academic year.',
+            });
+            setSaving(false);
+            return;
+          }
+        } else if (form.campusIds.length === 0) {
           push({
             kind: 'error',
             title: 'Campus required',
-            message: 'Pick at least one campus so they can scan students at meal distribution.',
+            message: 'Pick at least one campus so they can scan students.',
           });
           setSaving(false);
           return;
         }
+
         await api('/mentors', {
           method: 'POST',
           body: JSON.stringify({
@@ -175,7 +217,13 @@ export default function StaffPage() {
             phone: form.phone.trim() || undefined,
             roleName: form.roleName,
             organizationIds: orgId ? [orgId] : [],
-            campusIds: form.campusIds,
+            ...(form.roleName === 'Mentor'
+              ? {
+                  campusId: form.campusId,
+                  programId: form.programId || undefined,
+                  academicYearId: form.academicYearId,
+                }
+              : { campusIds: form.campusIds }),
           }),
         });
         push({
@@ -187,30 +235,50 @@ export default function StaffPage() {
                 ? 'Gate officer created'
                 : 'Mentor created',
           message:
-            form.roleName === 'FoodStaff'
-              ? 'They can sign in and only use Meal Distribution (door scan).'
-              : form.roleName === 'GateOfficer'
-                ? 'They can sign in and use Gate Scanner for exit/return.'
-                : undefined,
+            form.roleName === 'Mentor'
+              ? 'This mentor is scoped to their assigned campus only.'
+              : undefined,
         });
       } else if (editing) {
-        if (form.campusIds.length === 0) {
-          push({
-            kind: 'error',
-            title: 'Campus required',
-            message: 'Pick at least one campus so they can scan students at meal distribution.',
+        if (form.roleName === 'Mentor') {
+          if (!form.campusId || !form.academicYearId) {
+            push({
+              kind: 'error',
+              title: 'Campus & year required',
+              message: 'Mentors must stay assigned to one campus and academic year.',
+            });
+            setSaving(false);
+            return;
+          }
+          await api(`/mentors/${editing.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              fullName: form.fullName.trim(),
+              phone: form.phone.trim() || undefined,
+              campusId: form.campusId,
+              programId: form.programId || null,
+              academicYearId: form.academicYearId,
+            }),
           });
-          setSaving(false);
-          return;
+        } else {
+          if (form.campusIds.length === 0) {
+            push({
+              kind: 'error',
+              title: 'Campus required',
+              message: 'Pick at least one campus.',
+            });
+            setSaving(false);
+            return;
+          }
+          await api(`/mentors/${editing.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              fullName: form.fullName.trim(),
+              phone: form.phone.trim() || undefined,
+              campusIds: form.campusIds,
+            }),
+          });
         }
-        await api(`/mentors/${editing.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            fullName: form.fullName.trim(),
-            phone: form.phone.trim() || undefined,
-            campusIds: form.campusIds,
-          }),
-        });
         push({
           kind: 'success',
           title: 'Staff updated',
@@ -258,13 +326,24 @@ export default function StaffPage() {
     }));
   }
 
+  function campusLabel(m: Staff) {
+    if (m.mentorProfile?.campus) {
+      return m.mentorProfile.campus.shortName || m.mentorProfile.campus.name;
+    }
+    const ids = m.campusAssignments?.map((c) => c.campusId) ?? [];
+    if (!ids.length) return null;
+    return ids
+      .map((id) => campuses.find((c) => c.id === id)?.shortName ?? 'Campus')
+      .join(', ');
+  }
+
   return (
     <AppShell>
       <div className="page-head">
         <div>
           <h1 className="page-title">Staff</h1>
           <p className="page-sub">
-            Mentors, cafeteria door staff, and gate officers who scan student barcodes.
+            Mentors are camp-specific. Cafeteria and gate staff may cover one or more campuses.
           </p>
         </div>
         <AddButton onClick={openCreate} label="Add" />
@@ -277,11 +356,7 @@ export default function StaffPage() {
           <Skeleton height={36} />
         </div>
       ) : items.length === 0 ? (
-        <EmptyState
-          title="No staff yet"
-          actionLabel="Add cafeteria staff"
-          onAction={openCreate}
-        />
+        <EmptyState title="No staff yet" actionLabel="Add mentor" onAction={openCreate} />
       ) : (
         <div className="table-wrap">
           <table className="table zebra">
@@ -290,7 +365,8 @@ export default function StaffPage() {
                 <th>Name</th>
                 <th>Username</th>
                 <th>Role</th>
-                <th>Campuses</th>
+                <th>Campus</th>
+                <th>Program / Year</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -300,15 +376,18 @@ export default function StaffPage() {
                 <tr key={m.id}>
                   <td style={{ fontWeight: 500 }}>{m.fullName}</td>
                   <td>@{m.username}</td>
+                  <td>{m.roles.map((r) => roleLabel(r.role.name)).join(', ') || '—'}</td>
                   <td>
-                    {m.roles.map((r) => roleLabel(r.role.name)).join(', ') || '—'}
-                  </td>
-                  <td>
-                    {(m.campusAssignments?.length ?? 0) === 0 ? (
+                    {!campusLabel(m) ? (
                       <StatusChip tone="warning">None — cannot scan</StatusChip>
                     ) : (
-                      m.campusAssignments?.length
+                      campusLabel(m)
                     )}
+                  </td>
+                  <td className="muted" style={{ fontSize: '0.8125rem' }}>
+                    {m.mentorProfile
+                      ? `${m.mentorProfile.program?.name ?? 'All programs'} · ${m.mentorProfile.academicYear?.name ?? '—'}`
+                      : '—'}
                   </td>
                   <td>
                     <StatusChip tone={m.status === 'ACTIVE' ? 'success' : 'warning'}>
@@ -344,48 +423,28 @@ export default function StaffPage() {
             <div className="field">
               <span>Account type</span>
               <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-                <label className="checkbox-row" style={{ alignItems: 'flex-start' }}>
-                  <input
-                    type="radio"
-                    name="roleName"
-                    checked={form.roleName === 'FoodStaff'}
-                    onChange={() => setForm((f) => ({ ...f, roleName: 'FoodStaff' }))}
-                  />
-                  <span>
-                    <strong style={{ fontWeight: 600 }}>Cafeteria staff</strong>
-                    <span className="muted" style={{ display: 'block', fontSize: '0.8rem' }}>
-                      Door scan only — Meal Distribution camera/barcode. No admin menus.
+                {(
+                  [
+                    ['Mentor', 'Camp-specific. Sees only their campus students, meals, leave, and discipline.'],
+                    ['FoodStaff', 'Cafeteria door scan. Assign one or more campuses.'],
+                    ['GateOfficer', 'Gate exit/return scans. Assign one or more campuses.'],
+                  ] as const
+                ).map(([role, hint]) => (
+                  <label key={role} className="checkbox-row" style={{ alignItems: 'flex-start' }}>
+                    <input
+                      type="radio"
+                      name="roleName"
+                      checked={form.roleName === role}
+                      onChange={() => setForm((f) => ({ ...f, roleName: role }))}
+                    />
+                    <span>
+                      <strong style={{ fontWeight: 600 }}>{roleLabel(role)}</strong>
+                      <span className="muted" style={{ display: 'block', fontSize: '0.8rem' }}>
+                        {hint}
+                      </span>
                     </span>
-                  </span>
-                </label>
-                <label className="checkbox-row" style={{ alignItems: 'flex-start' }}>
-                  <input
-                    type="radio"
-                    name="roleName"
-                    checked={form.roleName === 'Mentor'}
-                    onChange={() => setForm((f) => ({ ...f, roleName: 'Mentor' }))}
-                  />
-                  <span>
-                    <strong style={{ fontWeight: 600 }}>Mentor</strong>
-                    <span className="muted" style={{ display: 'block', fontSize: '0.8rem' }}>
-                      Can scan meals plus view students, history, and reports.
-                    </span>
-                  </span>
-                </label>
-                <label className="checkbox-row" style={{ alignItems: 'flex-start' }}>
-                  <input
-                    type="radio"
-                    name="roleName"
-                    checked={form.roleName === 'GateOfficer'}
-                    onChange={() => setForm((f) => ({ ...f, roleName: 'GateOfficer' }))}
-                  />
-                  <span>
-                    <strong style={{ fontWeight: 600 }}>Gate Officer</strong>
-                    <span className="muted" style={{ display: 'block', fontSize: '0.8rem' }}>
-                      Exit / return scans at the campus gate. Sees Students Outside.
-                    </span>
-                  </span>
-                </label>
+                  </label>
+                ))}
               </div>
             </div>
           ) : (
@@ -426,10 +485,6 @@ export default function StaffPage() {
                 minLength={8}
                 autoComplete="new-password"
               />
-              <p className="muted" style={{ margin: 0, fontSize: '0.75rem' }}>
-                Give this login to the cafeteria scanner. Must include uppercase, lowercase, number,
-                and special character.
-              </p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <Button
                   type="button"
@@ -458,11 +513,73 @@ export default function StaffPage() {
             value={form.phone}
             onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
           />
-          {campuses.length > 0 ? (
+
+          {form.roleName === 'Mentor' ? (
+            <>
+              <label className="field">
+                <span>Campus (required)</span>
+                <select
+                  className="select"
+                  value={form.campusId}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      campusId: e.target.value,
+                      programId: '',
+                    }))
+                  }
+                  required
+                >
+                  <option value="" disabled>
+                    Select campus
+                  </option>
+                  {campuses.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.shortName} — {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Academic year (required)</span>
+                <select
+                  className="select"
+                  value={form.academicYearId}
+                  onChange={(e) => setForm((f) => ({ ...f, academicYearId: e.target.value }))}
+                  required
+                >
+                  <option value="" disabled>
+                    Select year
+                  </option>
+                  {years.map((y) => (
+                    <option key={y.id} value={y.id}>
+                      {y.name}
+                      {y.isCurrent ? ' (current)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Program (optional)</span>
+                <select
+                  className="select"
+                  value={form.programId}
+                  onChange={(e) => setForm((f) => ({ ...f, programId: e.target.value }))}
+                >
+                  <option value="">All programs on this campus</option>
+                  {campusPrograms.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : campuses.length > 0 ? (
             <div className="field">
               <span>Campus access</span>
               <p className="muted" style={{ margin: '4px 0 8px', fontSize: '0.75rem' }}>
-                Required — mentors can only scan students on assigned campuses.
+                Required — they can only operate on assigned campuses.
               </p>
               <div style={{ display: 'grid', gap: 6 }}>
                 {campuses.map((c) => (
@@ -482,6 +599,7 @@ export default function StaffPage() {
               Create a campus first, then assign staff to it.
             </p>
           )}
+
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <Button type="button" variant="ghost" onClick={() => setModal(null)}>
               Cancel

@@ -1,5 +1,13 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
-import { IsArray, IsEmail, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
+import {
+  IsArray,
+  IsEmail,
+  IsIn,
+  IsOptional,
+  IsString,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { AuthUser } from '../auth/auth.types';
@@ -17,13 +25,28 @@ class CreateMentorDto {
   /** Mentor = meal ops + history; FoodStaff = cafeteria scan; GateOfficer = gate. */
   @IsOptional() @IsIn(STAFF_ROLES) roleName?: 'Mentor' | 'FoodStaff' | 'GateOfficer';
   @IsOptional() @IsArray() @IsString({ each: true }) organizationIds?: string[];
+  /** Non-mentor staff may have multiple campuses. */
   @IsOptional() @IsArray() @IsString({ each: true }) campusIds?: string[];
+  /** Mentors: exactly one campus. */
+  @ValidateIf((o: CreateMentorDto) => (o.roleName ?? 'Mentor') === 'Mentor')
+  @IsString()
+  campusId?: string;
+  @IsOptional() @IsString() programId?: string;
+  @ValidateIf((o: CreateMentorDto) => (o.roleName ?? 'Mentor') === 'Mentor')
+  @IsString()
+  academicYearId?: string;
 }
 
 class UpdateMentorDto {
   @IsOptional() @IsString() fullName?: string;
   @IsOptional() @IsString() phone?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) campusIds?: string[];
+  @IsOptional() @IsString() campusId?: string;
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null && v !== undefined)
+  @IsString()
+  programId?: string | null;
+  @IsOptional() @IsString() academicYearId?: string;
 }
 
 @Controller('mentors')

@@ -13,7 +13,34 @@ export type AuthUser = {
   campusIds: string[];
   programIds: string[];
   isSuperAdmin: boolean;
+  /**
+   * Optional Super Admin / multi-campus Admin filter from `X-Active-Campus-Id`.
+   * When set, all campus-scoped queries narrow to this campus.
+   */
+  activeCampusId: string | null;
+  /** Present when the user has a camp-bound Mentor profile. */
+  mentorProfile: {
+    id: string;
+    campusId: string;
+    programId: string | null;
+    academicYearId: string;
+  } | null;
 };
+
+/** Roles that must never see cross-campus data. */
+export const CAMPUS_BOUND_ROLES = [
+  'Mentor',
+  'FoodStaff',
+  'GateOfficer',
+  'CampusCoordinator',
+  'ProgramCoordinator',
+] as const;
+
+export function isCampusBoundRole(user: AuthUser): boolean {
+  return user.roles.some((r) =>
+    (CAMPUS_BOUND_ROLES as readonly string[]).includes(r),
+  );
+}
 
 export function hasPermission(user: AuthUser, permission: string): boolean {
   if (user.isSuperAdmin || user.permissions.includes('*')) {
@@ -31,9 +58,15 @@ export function scopeOrganizationFilter(
   return { organizationId: { in: user.organizationIds } };
 }
 
-export function scopeCampusFilter(user: AuthUser): { campusId?: { in: string[] } } | object {
+export function scopeCampusFilter(user: AuthUser): { campusId?: string | { in: string[] } } | object {
   if (user.isSuperAdmin) {
+    if (user.activeCampusId) {
+      return { campusId: user.activeCampusId };
+    }
     return {};
+  }
+  if (user.activeCampusId && user.campusIds.includes(user.activeCampusId)) {
+    return { campusId: user.activeCampusId };
   }
   return { campusId: { in: user.campusIds } };
 }
@@ -53,7 +86,11 @@ export function assertOrgAccess(user: AuthUser, organizationId: string): boolean
 }
 
 export function assertCampusAccess(user: AuthUser, campusId: string): boolean {
-  return user.isSuperAdmin || user.campusIds.includes(campusId);
+  if (user.isSuperAdmin) {
+    if (user.activeCampusId) return user.activeCampusId === campusId;
+    return true;
+  }
+  return user.campusIds.includes(campusId);
 }
 
 export function assertProgramAccess(user: AuthUser, programId: string): boolean {
@@ -64,7 +101,7 @@ export function assertProgramAccess(user: AuthUser, programId: string): boolean 
 
 /**
  * Resolve campus filter without letting a request campusId overwrite scope.
- * Unauthorized requested campus → null (caller should 404).
+ * Unauthorized requested campus → undefined (caller should 403/404).
  */
 export function resolveCampusId(
   user: AuthUser,
@@ -74,7 +111,12 @@ export function resolveCampusId(
     if (!assertCampusAccess(user, requestedCampusId)) return undefined;
     return requestedCampusId;
   }
-  if (user.isSuperAdmin) return undefined;
+  if (user.isSuperAdmin) {
+    return user.activeCampusId ?? undefined;
+  }
+  if (user.activeCampusId && user.campusIds.includes(user.activeCampusId)) {
+    return user.activeCampusId;
+  }
   return { in: user.campusIds };
 }
 

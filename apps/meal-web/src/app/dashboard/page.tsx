@@ -5,21 +5,36 @@ import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   ArrowRight,
+  Camera,
+  ClipboardPen,
   Coffee,
+  Gavel,
   Moon,
   RefreshCw,
   Sun,
   UtensilsCrossed,
-  Users,
 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import {
+  CoverageDonut,
+  MealSessionsChart,
+  ModuleBarsChart,
+} from '@/components/dashboard/DashCharts';
 import { StatusChip } from '@/components/ui/Badge';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/Button';
 import { api, getActiveOrganizationId } from '@/lib/api';
-import { canViewLeaveSummary, homePathForRole, readStoredUser } from '@/lib/rbac';
+import {
+  canViewActivitySummary,
+  canViewDisciplinarySummary,
+  canViewLeaveSummary,
+  homePathForRole,
+  readStoredUser,
+} from '@/lib/rbac';
 import { formatEthiopiaTime } from '@/lib/timezone';
 import type { LeaveSummary } from '@/lib/leave';
+import type { DisciplinarySummary } from '@/lib/disciplinary';
+import type { ActivitySummary } from '@/lib/activity';
 
 type Summary = {
   totalStudents: number;
@@ -84,9 +99,42 @@ function activityChip(action?: string) {
   }
 }
 
-function pct(part: number, total: number) {
-  if (!total) return 0;
-  return Math.min(100, Math.round((part / total) * 100));
+function Kpi({
+  label,
+  value,
+  hint,
+  warn,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  hint?: string;
+  warn?: boolean;
+  onClick?: () => void;
+}) {
+  const interactive = Boolean(onClick);
+  return (
+    <div
+      className={`dash-kpi ${warn ? 'is-warn' : ''} ${interactive ? 'is-click' : ''}`}
+      role={interactive ? 'link' : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={
+        interactive
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick?.();
+              }
+            }
+          : undefined
+      }
+    >
+      <span className="dash-kpi-label">{label}</span>
+      <strong>{value}</strong>
+      {hint ? <span className="muted dash-kpi-hint">{hint}</span> : null}
+    </div>
+  );
 }
 
 export default function DashboardPage() {
@@ -94,6 +142,9 @@ export default function DashboardPage() {
   const [user, setUser] = useState<ReturnType<typeof readStoredUser>>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [leaveSummary, setLeaveSummary] = useState<LeaveSummary | null>(null);
+  const [disciplinarySummary, setDisciplinarySummary] =
+    useState<DisciplinarySummary | null>(null);
+  const [activitySummary, setActivitySummary] = useState<ActivitySummary | null>(null);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -108,7 +159,10 @@ export default function DashboardPage() {
     setError('');
     const orgId = getActiveOrganizationId();
     const q = orgId ? `?organizationId=${orgId}` : '';
-    const showLeave = canViewLeaveSummary(readStoredUser());
+    const currentUser = readStoredUser();
+    const showLeave = canViewLeaveSummary(currentUser);
+    const showDisciplinary = canViewDisciplinarySummary(currentUser);
+    const showActivity = canViewActivitySummary(currentUser);
     try {
       const [s, a] = await Promise.all([
         api<Summary>(`/dashboard/summary${q}`),
@@ -118,14 +172,29 @@ export default function DashboardPage() {
       setActivity(Array.isArray(a) ? a : []);
       if (showLeave) {
         try {
-          const ls = await api<LeaveSummary>(`/leave-requests/summary${q}`);
-          setLeaveSummary(ls);
+          setLeaveSummary(await api<LeaveSummary>(`/leave-requests/summary${q}`));
         } catch {
           setLeaveSummary(null);
         }
-      } else {
-        setLeaveSummary(null);
-      }
+      } else setLeaveSummary(null);
+
+      if (showDisciplinary) {
+        try {
+          setDisciplinarySummary(
+            await api<DisciplinarySummary>(`/disciplinary-incidents/summary${q}`),
+          );
+        } catch {
+          setDisciplinarySummary(null);
+        }
+      } else setDisciplinarySummary(null);
+
+      if (showActivity) {
+        try {
+          setActivitySummary(await api<ActivitySummary>(`/activity-reports/summary${q}`));
+        } catch {
+          setActivitySummary(null);
+        }
+      } else setActivitySummary(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard');
     } finally {
@@ -162,7 +231,6 @@ export default function DashboardPage() {
   }, []);
 
   const SessionIcon = sessionIcon(summary?.currentMealSession ?? null);
-  // Keep SSR/client first paint identical — personalize only after mount
   const firstName = mounted ? (user?.fullName?.split(' ')[0] ?? 'there') : 'there';
   const greeting = mounted ? greetingForHour(hour) : 'Welcome';
   const live = Boolean(summary?.currentMealSession);
@@ -178,13 +246,45 @@ export default function DashboardPage() {
 
   const remaining = Math.max(0, (summary?.totalStudents ?? 0) - currentServed);
 
-  const sessions = summary
-    ? [
-        { key: 'Breakfast', value: summary.breakfastServed, active: (summary.currentMealSession ?? '').toUpperCase().includes('BREAKFAST') },
-        { key: 'Lunch', value: summary.lunchServed, active: (summary.currentMealSession ?? '').toUpperCase().includes('LUNCH') },
-        { key: 'Dinner', value: summary.dinnerServed, active: (summary.currentMealSession ?? '').toUpperCase().includes('DINNER') },
-      ]
-    : [];
+  const sessionChart = useMemo(() => {
+    if (!summary) return [];
+    const code = (summary.currentMealSession ?? '').toUpperCase();
+    return [
+      {
+        name: 'Breakfast',
+        served: summary.breakfastServed,
+        active: code.includes('BREAKFAST'),
+      },
+      {
+        name: 'Lunch',
+        served: summary.lunchServed,
+        active: code.includes('LUNCH'),
+      },
+      {
+        name: 'Dinner',
+        served: summary.dinnerServed,
+        active: code.includes('DINNER'),
+      },
+    ];
+  }, [summary]);
+
+  const moduleChart = useMemo(() => {
+    const rows: Array<{ name: string; value: number }> = [];
+    if (leaveSummary) {
+      rows.push({ name: 'Outside', value: leaveSummary.outside });
+      rows.push({ name: 'Leave pending', value: leaveSummary.pending });
+      rows.push({ name: 'Overdue', value: leaveSummary.overdue });
+    }
+    if (disciplinarySummary) {
+      rows.push({ name: 'Open cases', value: disciplinarySummary.openCases });
+      rows.push({ name: 'Incidents today', value: disciplinarySummary.incidentsToday });
+    }
+    if (activitySummary) {
+      rows.push({ name: 'Activities', value: activitySummary.activitiesToday });
+      rows.push({ name: 'Pending reports', value: activitySummary.pendingApprovals });
+    }
+    return rows.filter((r) => r.value > 0 || rows.length <= 4).slice(0, 7);
+  }, [leaveSummary, disciplinarySummary, activitySummary]);
 
   return (
     <AppShell>
@@ -194,9 +294,9 @@ export default function DashboardPage() {
             <p className="dash-kicker" suppressHydrationWarning>
               {greeting}, {firstName}
             </p>
-            <h1 className="page-title">Dashboard</h1>
+            <h1 className="page-title">Operations dashboard</h1>
             <p className="page-sub dash-sub" suppressHydrationWarning>
-              Live meal operations · {mounted && clock ? clock : 'local time'}
+              Live overview · {mounted && clock ? clock : 'local time'}
               {summary?.currentAcademicYear ? ` · ${summary.currentAcademicYear}` : ''}
             </p>
           </div>
@@ -207,7 +307,12 @@ export default function DashboardPage() {
               onClick={() => void load(true)}
               disabled={refreshing || loading}
             >
-              <RefreshCw size={15} strokeWidth={1.75} aria-hidden className={refreshing ? 'spin' : undefined} />
+              <RefreshCw
+                size={15}
+                strokeWidth={1.75}
+                aria-hidden
+                className={refreshing ? 'spin' : undefined}
+              />
               Refresh
             </Button>
             <Button type="button" onClick={() => router.push('/meals')}>
@@ -219,7 +324,7 @@ export default function DashboardPage() {
 
         {error ? <p className="error">{error}</p> : null}
 
-        <section className={`dash-session ${live ? 'is-live' : ''}`} aria-live="polite">
+        <section className={`dash-hero ${live ? 'is-live' : ''}`} aria-live="polite">
           {loading ? (
             <div style={{ display: 'grid', gap: 10, flex: 1 }}>
               <Skeleton height={14} width={120} />
@@ -228,207 +333,292 @@ export default function DashboardPage() {
             </div>
           ) : (
             <>
-              <div className="dash-session-main">
-                <div className="dash-session-icon" aria-hidden>
+              <div className="dash-hero-main">
+                <div className="dash-hero-icon" aria-hidden>
                   <SessionIcon size={22} strokeWidth={1.75} />
                 </div>
                 <div>
-                  <div className="dash-session-label">
+                  <div className="dash-hero-label">
                     {live ? 'Current meal session' : 'No active meal window'}
                   </div>
                   <h2>{live ? summary?.currentMealSession : 'Between sessions'}</h2>
                   <p className="muted">
                     {live
-                      ? `${currentServed} served · ~${remaining} still on roster for this window`
+                      ? `${currentServed} served · ~${remaining} still expected this window`
                       : 'Open the meal station when the next window starts.'}
                   </p>
                 </div>
               </div>
-              <div className="dash-session-side">
-                <StatusChip tone={live ? 'success' : 'warning'}>{live ? 'Live' : 'Idle'}</StatusChip>
-                <button type="button" className="dash-link" onClick={() => router.push('/meals')}>
-                  Open station <ArrowRight size={14} strokeWidth={2} aria-hidden />
-                </button>
+              <div className="dash-hero-metrics">
+                <div>
+                  <span className="muted">Served now</span>
+                  <strong>{currentServed}</strong>
+                </div>
+                <div>
+                  <span className="muted">Remaining</span>
+                  <strong>{remaining}</strong>
+                </div>
+                <div className="dash-hero-side">
+                  <StatusChip tone={live ? 'success' : 'warning'}>
+                    {live ? 'Live' : 'Idle'}
+                  </StatusChip>
+                  <button
+                    type="button"
+                    className="dash-link"
+                    onClick={() => router.push('/meals')}
+                  >
+                    Open station <ArrowRight size={14} strokeWidth={2} aria-hidden />
+                  </button>
+                </div>
               </div>
             </>
           )}
         </section>
 
-        <section className="dash-stats" aria-label="Today overview">
+        <section className="dash-kpis" aria-label="Key metrics">
           {loading
             ? Array.from({ length: 4 }).map((_, i) => (
-                <div className="dash-stat" key={i}>
+                <div className="dash-kpi" key={i}>
                   <Skeleton height={12} width="50%" />
                   <Skeleton height={28} width="40%" />
                 </div>
               ))
-            : [
-                {
-                  label: 'Meals today',
-                  value: summary?.mealsServedToday ?? 0,
-                  hint: 'All sessions',
-                },
-                {
-                  label: 'Duplicates blocked',
-                  value: summary?.duplicateScanAttempts ?? 0,
-                  hint: 'Today',
-                  warn: (summary?.duplicateScanAttempts ?? 0) > 0,
-                },
-                {
-                  label: 'Active staff',
-                  value: summary?.activeStaff ?? 0,
-                  hint: 'Mentors & food staff',
-                },
-                {
-                  label: 'Students',
-                  value: summary?.totalStudents ?? 0,
-                  hint: 'On roster',
-                },
-              ].map((card) => (
-                <div className={`dash-stat ${card.warn ? 'is-warn' : ''}`} key={card.label}>
-                  <span className="dash-stat-label">{card.label}</span>
-                  <strong>{card.value}</strong>
-                  <span className="muted dash-stat-hint">{card.hint}</span>
-                </div>
-              ))}
+            : (
+              <>
+                <Kpi
+                  label="Meals today"
+                  value={summary?.mealsServedToday ?? 0}
+                  hint="All sessions"
+                />
+                <Kpi
+                  label="Students"
+                  value={summary?.totalStudents ?? 0}
+                  hint="On roster"
+                />
+                <Kpi
+                  label="Active staff"
+                  value={summary?.activeStaff ?? 0}
+                  hint="Mentors & food staff"
+                />
+                <Kpi
+                  label="Duplicates"
+                  value={summary?.duplicateScanAttempts ?? 0}
+                  hint="Blocked today"
+                  warn={(summary?.duplicateScanAttempts ?? 0) > 0}
+                />
+              </>
+            )}
         </section>
 
-        {leaveSummary ? (
-          <section className="dash-stats" aria-label="Leave overview" style={{ marginTop: 12 }}>
-            {[
-              {
-                label: 'Outside',
-                value: leaveSummary.outside,
-                hint: 'Checked out',
-                href: '/leave/outside',
-              },
-              {
-                label: 'Overdue',
-                value: leaveSummary.overdue,
-                hint: 'Past expected return',
-                href: '/leave/outside',
-                warn: leaveSummary.overdue > 0,
-              },
-              {
-                label: 'Pending',
-                value: leaveSummary.pending,
-                hint: 'Awaiting approval',
-                href: '/leave',
-              },
-            ].map((card) => (
-              <div
-                className={`dash-stat ${card.warn ? 'is-warn' : ''}`}
-                key={card.label}
-                role="link"
-                tabIndex={0}
-                style={{ cursor: 'pointer' }}
-                onClick={() => router.push(card.href)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    router.push(card.href);
-                  }
-                }}
-              >
-                <span className="dash-stat-label">{card.label}</span>
-                <strong>{card.value}</strong>
-                <span className="muted dash-stat-hint">{card.hint}</span>
-              </div>
-            ))}
-          </section>
-        ) : null}
-
-        <div className="dash-grid">
+        <div className="dash-charts">
           <section className="panel dash-panel">
             <div className="dash-panel-head">
-              <h2>Today by session</h2>
-              <Users size={15} strokeWidth={1.75} className="muted" aria-hidden />
+              <div>
+                <h2>Meals by session</h2>
+                <p className="muted dash-panel-sub">Breakfast, lunch, and dinner today</p>
+              </div>
             </div>
             {loading ? (
-              <div style={{ display: 'grid', gap: 14 }}>
-                <Skeleton height={44} />
-                <Skeleton height={44} />
-                <Skeleton height={44} />
-              </div>
+              <Skeleton height={240} />
             ) : (
-              <div className="dash-sessions">
-                {sessions.map((s) => (
-                  <div key={s.key} className={`dash-session-row ${s.active ? 'is-active' : ''}`}>
-                    <div className="dash-session-row-top">
-                      <span>
-                        {s.key}
-                        {s.active ? <StatusChip tone="success">Now</StatusChip> : null}
-                      </span>
-                      <strong>{s.value}</strong>
-                    </div>
-                    <div className="dash-bar" aria-hidden>
-                      <span style={{ width: `${pct(s.value, summary?.totalStudents ?? 0)}%` }} />
-                    </div>
-                    <div className="muted" style={{ fontSize: '0.75rem' }}>
-                      {pct(s.value, summary?.totalStudents ?? 0)}% of roster
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <MealSessionsChart
+                data={sessionChart}
+                roster={summary?.totalStudents ?? 0}
+              />
             )}
           </section>
 
           <section className="panel dash-panel">
             <div className="dash-panel-head">
-              <h2>Recent activity</h2>
-              <button type="button" className="dash-link" onClick={() => router.push(homePathForRole(user))}>
-                Station
-              </button>
+              <div>
+                <h2>Session coverage</h2>
+                <p className="muted dash-panel-sub">
+                  {live ? 'Current window vs roster' : 'Today vs roster'}
+                </p>
+              </div>
             </div>
             {loading ? (
-              <div style={{ display: 'grid', gap: 8 }}>
-                <Skeleton height={48} />
-                <Skeleton height={48} />
-                <Skeleton height={48} />
-              </div>
-            ) : activity.length === 0 ? (
-              <div className="dash-empty">
-                <p className="muted">No serves yet today. Activity appears as meals are scanned.</p>
-                <Button type="button" variant="secondary" size="sm" onClick={() => router.push('/meals')}>
-                  Start serving
-                </Button>
-              </div>
+              <Skeleton height={220} />
             ) : (
-              <ul className="dash-activity">
-                {activity.slice(0, 8).map((item, idx) => (
-                  <li key={item.id ?? idx}>
-                    <div>
-                      <strong>{activityLabel(item.action)}</strong>
-                      <div className="muted">
-                        {item.user?.fullName ?? 'System'}
-                        {item.resource ? ` · ${item.resource}` : ''}
-                      </div>
-                    </div>
-                    <div className="dash-activity-meta">
-                      {(() => {
-                        const chip = activityChip(item.action);
-                        return (
-                          <StatusChip tone={chip.tone}>
-                            {chip.tone === 'warning' ? (
-                              <>
-                                <AlertTriangle size={11} strokeWidth={2} aria-hidden /> {chip.label}
-                              </>
-                            ) : (
-                              chip.label
-                            )}
-                          </StatusChip>
-                        );
-                      })()}
-                      <time className="muted">
-                        {item.timestamp ? formatEthiopiaTime(new Date(item.timestamp)) : ''}
-                      </time>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <CoverageDonut
+                served={live ? currentServed : summary?.mealsServedToday ?? 0}
+                remaining={
+                  live
+                    ? remaining
+                    : Math.max(
+                        0,
+                        (summary?.totalStudents ?? 0) - (summary?.mealsServedToday ?? 0),
+                      )
+                }
+                label={live ? 'covered' : 'of roster'}
+              />
             )}
           </section>
         </div>
+
+        {(leaveSummary || disciplinarySummary || activitySummary) && !loading ? (
+          <div className="dash-charts dash-charts-secondary">
+            <section className="panel dash-panel">
+              <div className="dash-panel-head">
+                <div>
+                  <h2>Campus pulse</h2>
+                  <p className="muted dash-panel-sub">Leave, disciplinary & activity signals</p>
+                </div>
+              </div>
+              {moduleChart.length ? (
+                <ModuleBarsChart data={moduleChart} />
+              ) : (
+                <p className="muted" style={{ margin: 0 }}>
+                  No module activity to chart yet.
+                </p>
+              )}
+            </section>
+
+            <section className="panel dash-panel dash-modules">
+              <div className="dash-panel-head">
+                <div>
+                  <h2>Quick modules</h2>
+                  <p className="muted dash-panel-sub">Jump into what needs attention</p>
+                </div>
+              </div>
+              <div className="dash-module-grid">
+                {leaveSummary ? (
+                  <button
+                    type="button"
+                    className="dash-module-card"
+                    onClick={() => router.push('/leave/outside')}
+                  >
+                    <ClipboardPen size={18} strokeWidth={1.75} aria-hidden />
+                    <div>
+                      <strong>{leaveSummary.outside}</strong>
+                      <span>Students outside</span>
+                    </div>
+                    {leaveSummary.overdue > 0 ? (
+                      <StatusChip tone="warning">{leaveSummary.overdue} overdue</StatusChip>
+                    ) : (
+                      <StatusChip tone="info">{leaveSummary.pending} pending</StatusChip>
+                    )}
+                  </button>
+                ) : null}
+                {disciplinarySummary ? (
+                  <button
+                    type="button"
+                    className="dash-module-card"
+                    onClick={() => router.push('/disciplinary')}
+                  >
+                    <Gavel size={18} strokeWidth={1.75} aria-hidden />
+                    <div>
+                      <strong>{disciplinarySummary.openCases}</strong>
+                      <span>Open cases</span>
+                    </div>
+                    {disciplinarySummary.highSeverityOpen > 0 ? (
+                      <StatusChip tone="error">
+                        {disciplinarySummary.highSeverityOpen} high
+                      </StatusChip>
+                    ) : (
+                      <StatusChip tone="info">
+                        {disciplinarySummary.incidentsToday} today
+                      </StatusChip>
+                    )}
+                  </button>
+                ) : null}
+                {activitySummary ? (
+                  <button
+                    type="button"
+                    className="dash-module-card"
+                    onClick={() => router.push('/activity')}
+                  >
+                    <Camera size={18} strokeWidth={1.75} aria-hidden />
+                    <div>
+                      <strong>{activitySummary.activitiesToday}</strong>
+                      <span>Activities today</span>
+                    </div>
+                    {activitySummary.pendingApprovals > 0 ? (
+                      <StatusChip tone="warning">
+                        {activitySummary.pendingApprovals} pending
+                      </StatusChip>
+                    ) : (
+                      <StatusChip tone="success">
+                        {activitySummary.approvedReports} approved
+                      </StatusChip>
+                    )}
+                  </button>
+                ) : null}
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        <section className="panel dash-panel">
+          <div className="dash-panel-head">
+            <div>
+              <h2>Recent activity</h2>
+              <p className="muted dash-panel-sub">Latest meal station events</p>
+            </div>
+            <button
+              type="button"
+              className="dash-link"
+              onClick={() => router.push(homePathForRole(user))}
+            >
+              Station
+            </button>
+          </div>
+          {loading ? (
+            <div style={{ display: 'grid', gap: 8 }}>
+              <Skeleton height={48} />
+              <Skeleton height={48} />
+              <Skeleton height={48} />
+            </div>
+          ) : activity.length === 0 ? (
+            <div className="dash-empty">
+              <p className="muted">No serves yet today. Activity appears as meals are scanned.</p>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => router.push('/meals')}
+              >
+                Start serving
+              </Button>
+            </div>
+          ) : (
+            <ul className="dash-activity">
+              {activity.slice(0, 8).map((item, idx) => (
+                <li key={item.id ?? idx}>
+                  <div>
+                    <strong>{activityLabel(item.action)}</strong>
+                    <div className="muted">
+                      {item.user?.fullName ?? 'System'}
+                      {item.resource ? ` · ${item.resource}` : ''}
+                    </div>
+                  </div>
+                  <div className="dash-activity-meta">
+                    {(() => {
+                      const chip = activityChip(item.action);
+                      return (
+                        <StatusChip tone={chip.tone}>
+                          {chip.tone === 'warning' ? (
+                            <>
+                              <AlertTriangle size={11} strokeWidth={2} aria-hidden />{' '}
+                              {chip.label}
+                            </>
+                          ) : (
+                            chip.label
+                          )}
+                        </StatusChip>
+                      );
+                    })()}
+                    <time className="muted">
+                      {item.timestamp
+                        ? formatEthiopiaTime(new Date(item.timestamp))
+                        : ''}
+                    </time>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
     </AppShell>
   );

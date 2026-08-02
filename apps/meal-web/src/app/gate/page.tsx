@@ -309,7 +309,9 @@ export default function GateScannerPage() {
             <form className="meal-scan" onSubmit={onSubmit}>
               <div className="meal-scan-label">
                 <ScanLine size={16} strokeWidth={1.75} aria-hidden />
-                <span>{mode === 'exit' ? 'Exit scan' : 'Return scan'} · USB / typed ID</span>
+                <span>
+                  {mode === 'exit' ? 'Exit scan' : 'Return scan'} · student barcode or leave # (LV-…)
+                </span>
               </div>
               <input
                 id="gate-barcode"

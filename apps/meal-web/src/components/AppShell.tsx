@@ -6,10 +6,12 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Building2,
   CalendarDays,
+  Camera,
   ClipboardList,
   ClipboardPen,
   DoorOpen,
   FileBarChart,
+  Gavel,
   GraduationCap,
   LayoutDashboard,
   LogOut,
@@ -36,6 +38,7 @@ import { useTheme } from '@/components/providers/ThemeProvider';
 import { Button } from '@/components/ui/Button';
 import { NotificationBell } from '@/components/NotificationBell';
 import { BrandLogo } from '@/components/BrandLogo';
+import { CampusSwitcher } from '@/components/CampusSwitcher';
 
 type NavItem = {
   href: string;
@@ -126,6 +129,34 @@ const NAV: NavItem[] = [
     href: '/leave',
     label: 'Leave Requests',
     icon: ClipboardPen,
+    roles: [
+      'SuperAdmin',
+      'Admin',
+      'CampusCoordinator',
+      'ProgramCoordinator',
+      'Mentor',
+      'Viewer',
+      'FoodStaff',
+    ],
+  },
+  {
+    href: '/disciplinary',
+    label: 'Disciplinary',
+    icon: Gavel,
+    roles: [
+      'SuperAdmin',
+      'Admin',
+      'CampusCoordinator',
+      'ProgramCoordinator',
+      'Mentor',
+      'Viewer',
+      'GateOfficer',
+    ],
+  },
+  {
+    href: '/activity',
+    label: 'Activity Reports',
+    icon: Camera,
     roles: [
       'SuperAdmin',
       'Admin',
@@ -400,6 +431,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </form>
 
           <div className="topbar-actions">
+            <CampusSwitcher />
             <NotificationBell />
             <button
               type="button"

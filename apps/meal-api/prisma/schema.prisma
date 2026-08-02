@@ -65,6 +65,29 @@ enum GateAction {
   RETURN
 }
 
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentStatus {
+  OPEN
+  UNDER_INVESTIGATION
+  AWAITING_DECISION
+  ACTION_ASSIGNED
+  CLOSED
+  APPEALED
+}
+
+enum DisciplinaryActionStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
 enum ImportMode {
   ADD_ONLY
   UPDATE_EXISTING
@@ -87,6 +110,16 @@ enum CustomFieldType {
   SELECT
   MULTI_SELECT
   JSON
+}
+
+enum ActivityReportStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  PUBLISHED
+  ARCHIVED
 }
 
 /// Top-level tenant. Every operational entity belongs to an organization.
@@ -120,6 +153,11 @@ model Organization {
   leaveTypes            LeaveType[]
   leaveRequests         LeaveRequest[]
   gateLogs              GateLog[]
+  incidentTypes         IncidentType[]
+  disciplinaryActionTypes DisciplinaryActionType[]
+  disciplinaryIncidents DisciplinaryIncident[]
+  activityCategories    ActivityCategory[]
+  activityReports       ActivityReport[]
   auditLogs             AuditLog[]
   businessRules         BusinessRule[]
 }
@@ -260,6 +298,8 @@ model AcademicYear {
   programs     Program[]
   students     Student[]
   mealRecords  MealRecord[]
+  mentors         Mentor[]
+  activityReports ActivityReport[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -293,6 +333,9 @@ model Campus {
   importJobs         ImportJob[]
   leaveRequests      LeaveRequest[]
   gateLogs           GateLog[]
+  disciplinaryIncidents DisciplinaryIncident[]
+  mentors            Mentor[]
+  activityReports    ActivityReport[]
 
   @@unique([organizationId, shortName])
   @@index([organizationId])
@@ -325,6 +368,9 @@ model Program {
   userAssignments   UserProgramAssignment[]
   mealRecords       MealRecord[]
   leaveRequests     LeaveRequest[]
+  disciplinaryIncidents DisciplinaryIncident[]
+  mentors           Mentor[]
+  activityReports   ActivityReport[]
 
   @@unique([campusId, name, academicYearId])
   @@index([organizationId])
@@ -364,6 +410,37 @@ model User {
   leaveRequestsCreated    LeaveRequest[]               @relation("LeaveCreatedBy")
   leaveRequestsApproved   LeaveRequest[]               @relation("LeaveApprovedBy")
   gateLogsAsOfficer       GateLog[]                    @relation("GateOfficer")
+  incidentsReported       DisciplinaryIncident[]       @relation("IncidentReportedBy")
+  incidentsAssigned       DisciplinaryIncident[]       @relation("IncidentAssignedTo")
+  incidentsDecided        DisciplinaryIncident[]       @relation("IncidentDecidedBy")
+  disciplinaryActionsAssigned DisciplinaryAction[]     @relation("DisciplinaryActionAssignedBy")
+  /// Camp-specific mentor assignment (one campus; optional program).
+  mentorProfile           Mentor?
+  activityReportsSubmitted ActivityReport[]            @relation("ActivitySubmittedBy")
+  activityReportsReviewed  ActivityReport[]            @relation("ActivityReviewedBy")
+  activityMediaUploaded    ActivityMedia[]             @relation("ActivityMediaUploadedBy")
+}
+
+/// Camp-bound mentor profile. Mentors are never global — they belong to one campus.
+model Mentor {
+  id             String        @id @default(cuid())
+  userId         String        @unique
+  campusId       String
+  programId      String?
+  academicYearId String
+  status         AccountStatus @default(ACTIVE)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campus       Campus       @relation(fields: [campusId], references: [id])
+  program      Program?     @relation(fields: [programId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  @@index([campusId])
+  @@index([programId])
+  @@index([academicYearId])
+  @@index([status])
 }
 
 model UserOrganizationAssignment {
@@ -492,6 +569,8 @@ model Student {
   mealRecords       MealRecord[]
   leaveRequests     LeaveRequest[]
   gateLogs          GateLog[]
+  disciplinaryIncidents DisciplinaryIncident[]
+  activityParticipations ActivityParticipant[]
 
   @@unique([organizationId, studentId])
   @@unique([organizationId, barcode])
@@ -780,5 +859,227 @@ model GateLog {
   @@index([leaveRequestId])
   @@index([studentId, scannedAt])
   @@index([action, scannedAt])
+}
+
+/// Configurable incident categories (Attendance, Behavior, Camp Rules, …).
+model IncidentType {
+  id             String    @id @default(cuid())
+  organizationId String
+  category       String
+  name           String
+  description    String?
+  active         Boolean   @default(true)
+  sortOrder      Int       @default(0)
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  incidents    DisciplinaryIncident[]
+
+  @@unique([organizationId, category, name])
+  @@index([organizationId])
+  @@index([deletedAt])
+}
+
+/// Catalog of disciplinary outcomes (Verbal Warning, Suspension, …).
+model DisciplinaryActionType {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  /// When true, meal station may show an active-case alert for this action.
+  affectsMeals   Boolean   @default(false)
+  active         Boolean   @default(true)
+  sortOrder      Int       @default(0)
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actions      DisciplinaryAction[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([deletedAt])
+}
+
+/// Full disciplinary case from report through resolution.
+model DisciplinaryIncident {
+  id               String           @id @default(cuid())
+  organizationId   String
+  incidentNumber   String
+  studentId        String
+  campusId         String
+  programId        String
+  incidentTypeId   String
+  severity         IncidentSeverity @default(LOW)
+  status           IncidentStatus   @default(OPEN)
+  occurredAt       DateTime
+  location         String?
+  description      String
+  witnesses        String?
+  evidenceUrl      String?
+  investigationNotes String?
+  decisionNotes    String?
+  acknowledgmentNotes String?
+  acknowledgedAt   DateTime?
+  closedAt         DateTime?
+  leaveRequestId   String?
+  reportedById     String
+  assignedToId     String?
+  decidedById      String?
+  decidedAt        DateTime?
+  deletedAt        DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  organization Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  student      Student                  @relation(fields: [studentId], references: [id])
+  campus       Campus                   @relation(fields: [campusId], references: [id])
+  program      Program                  @relation(fields: [programId], references: [id])
+  incidentType IncidentType             @relation(fields: [incidentTypeId], references: [id])
+  reportedBy   User                     @relation("IncidentReportedBy", fields: [reportedById], references: [id])
+  assignedTo   User?                    @relation("IncidentAssignedTo", fields: [assignedToId], references: [id])
+  decidedBy    User?                    @relation("IncidentDecidedBy", fields: [decidedById], references: [id])
+  actions      DisciplinaryAction[]
+
+  @@unique([organizationId, incidentNumber])
+  @@index([organizationId, status])
+  @@index([studentId, status])
+  @@index([campusId, status])
+  @@index([severity, status])
+  @@index([reportedById])
+  @@index([occurredAt])
+  @@index([deletedAt])
+}
+
+model DisciplinaryAction {
+  id             String                    @id @default(cuid())
+  organizationId String
+  incidentId     String
+  actionTypeId   String
+  description    String?
+  assignedById   String
+  startDate      DateTime?
+  endDate        DateTime?
+  completedAt    DateTime?
+  status         DisciplinaryActionStatus  @default(PENDING)
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  incident   DisciplinaryIncident   @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  actionType DisciplinaryActionType @relation(fields: [actionTypeId], references: [id])
+  assignedBy User                   @relation("DisciplinaryActionAssignedBy", fields: [assignedById], references: [id])
+
+  @@index([incidentId])
+  @@index([organizationId, status])
+  @@index([actionTypeId])
+}
+
+/// Configurable activity report categories (Training Session, Workshop, …).
+model ActivityCategory {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  active         Boolean   @default(true)
+  sortOrder      Int       @default(0)
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reports      ActivityReport[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([deletedAt])
+}
+
+/// Official campus daily/activity report with media and approval workflow.
+model ActivityReport {
+  id                 String               @id @default(cuid())
+  organizationId     String
+  reportNumber       String
+  title              String
+  categoryId         String
+  campusId           String
+  programId          String?
+  academicYearId     String
+  reportDate         DateTime             @db.Date
+  startTime          String?
+  endTime            String?
+  location           String?
+  objectives         String?
+  description        String
+  activitiesPerformed String?
+  outcomes           String?
+  challenges         String?
+  recommendations    String?
+  participantCount   Int                  @default(0)
+  status             ActivityReportStatus @default(DRAFT)
+  reviewNotes        String?
+  submittedById      String
+  reviewedById       String?
+  submittedAt        DateTime?
+  approvedAt         DateTime?
+  publishedAt        DateTime?
+  deletedAt          DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category     ActivityCategory     @relation(fields: [categoryId], references: [id])
+  campus       Campus               @relation(fields: [campusId], references: [id])
+  program      Program?             @relation(fields: [programId], references: [id])
+  academicYear AcademicYear         @relation(fields: [academicYearId], references: [id])
+  submittedBy  User                 @relation("ActivitySubmittedBy", fields: [submittedById], references: [id])
+  reviewedBy   User?                @relation("ActivityReviewedBy", fields: [reviewedById], references: [id])
+  media        ActivityMedia[]
+  participants ActivityParticipant[]
+
+  @@unique([organizationId, reportNumber])
+  @@index([organizationId, status])
+  @@index([campusId, reportDate])
+  @@index([categoryId])
+  @@index([submittedById])
+  @@index([reportDate])
+  @@index([deletedAt])
+}
+
+model ActivityMedia {
+  id           String   @id @default(cuid())
+  reportId     String
+  fileName     String
+  originalName String
+  fileType     String
+  mimeType     String
+  fileSize     Int
+  storagePath  String
+  caption      String?
+  sortOrder    Int      @default(0)
+  uploadedById String
+  uploadedAt   DateTime @default(now())
+
+  report     ActivityReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  uploadedBy User           @relation("ActivityMediaUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([reportId])
+  @@index([fileType])
+  @@index([uploadedById])
+}
+
+model ActivityParticipant {
+  id        String   @id @default(cuid())
+  reportId  String
+  studentId String
+  createdAt DateTime @default(now())
+
+  report  ActivityReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  student Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, studentId])
+  @@index([studentId])
 }
 

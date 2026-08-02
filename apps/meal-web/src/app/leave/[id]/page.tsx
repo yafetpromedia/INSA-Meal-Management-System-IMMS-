@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Ban, Check, Printer, X } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { PrintableBarcode } from '@/components/gate-pass/PrintableBarcode';
 import { Button } from '@/components/ui/Button';
 import { StatusChip } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -223,9 +224,30 @@ export default function LeaveDetailPage() {
               </div>
               <div>
                 <span className="muted">Barcode</span>
-                <strong style={{ fontFamily: 'ui-monospace, monospace' }}>
-                  {leave.student?.barcode ?? leave.student?.studentId ?? '—'}
+                {(leave.student?.barcode ?? leave.student?.studentId) ? (
+                  <PrintableBarcode
+                    value={leave.student?.barcode || leave.student?.studentId || ''}
+                    className="gpc-barcode-svg"
+                    height={40}
+                  />
+                ) : (
+                  <strong>—</strong>
+                )}
+              </div>
+              <div>
+                <span className="muted">Gate verification</span>
+                <strong>
+                  {leave.status === 'CHECKED_OUT' || leave.status === 'OVERDUE'
+                    ? 'Exit verified at gate'
+                    : leave.status === 'RETURNED'
+                      ? 'Return verified at gate'
+                      : leave.status === 'APPROVED'
+                        ? 'Approved — waiting for gate scan'
+                        : leaveStatusLabel(leave.status)}
                 </strong>
+                <div className="muted" style={{ fontSize: '0.8rem' }}>
+                  Scan at Gate Scanner (/gate) using student barcode or leave number
+                </div>
               </div>
               <div>
                 <span className="muted">Leave type</span>

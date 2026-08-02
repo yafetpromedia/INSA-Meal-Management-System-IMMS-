@@ -9,6 +9,12 @@ export type ImmsUser = {
   programIds?: string[];
   organizationIds?: string[];
   defaultOrganizationId?: string | null;
+  mentorProfile?: {
+    id: string;
+    campusId: string;
+    programId: string | null;
+    academicYearId: string;
+  } | null;
 };
 
 export function readStoredUser(): ImmsUser | null {
@@ -57,7 +63,17 @@ export function homePathForRole(user: ImmsUser | null | undefined) {
 }
 
 export function canApproveLeave(user: ImmsUser | null | undefined) {
-  return hasAnyRole(user, ['SuperAdmin', 'Admin', 'CampusCoordinator']);
+  return hasAnyRole(user, ['SuperAdmin', 'Admin', 'CampusCoordinator', 'Mentor']);
+}
+
+export function canCreateLeave(user: ImmsUser | null | undefined) {
+  return hasAnyRole(user, [
+    'SuperAdmin',
+    'Admin',
+    'CampusCoordinator',
+    'ProgramCoordinator',
+    'Mentor',
+  ]);
 }
 
 export function canViewLeaveSummary(user: ImmsUser | null | undefined) {
@@ -84,4 +100,80 @@ export function canViewLeaveSummary(user: ImmsUser | null | undefined) {
     'Viewer',
     'GateOfficer',
   ]);
+}
+
+export function canViewDisciplinary(user: ImmsUser | null | undefined = readStoredUser()) {
+  return hasAnyRole(user, [
+    'SuperAdmin',
+    'Admin',
+    'CampusCoordinator',
+    'ProgramCoordinator',
+    'Mentor',
+    'Viewer',
+    'GateOfficer',
+  ]);
+}
+
+export function canCreateDisciplinary(user: ImmsUser | null | undefined) {
+  return hasAnyRole(user, [
+    'SuperAdmin',
+    'Admin',
+    'CampusCoordinator',
+    'ProgramCoordinator',
+    'Mentor',
+  ]);
+}
+
+export function canInvestigateDisciplinary(user: ImmsUser | null | undefined) {
+  return hasAnyRole(user, ['SuperAdmin', 'Admin', 'CampusCoordinator']);
+}
+
+export function canDecideDisciplinary(user: ImmsUser | null | undefined) {
+  return hasAnyRole(user, ['SuperAdmin', 'Admin', 'CampusCoordinator']);
+}
+
+export function canManageDisciplinaryTypes(user: ImmsUser | null | undefined) {
+  return hasAnyRole(user, ['SuperAdmin', 'Admin']);
+}
+
+export function canViewDisciplinarySummary(user: ImmsUser | null | undefined) {
+  return canViewDisciplinary(user);
+}
+
+export function canViewActivity(user: ImmsUser | null | undefined = readStoredUser()) {
+  return hasAnyRole(user, [
+    'SuperAdmin',
+    'Admin',
+    'CampusCoordinator',
+    'ProgramCoordinator',
+    'Mentor',
+    'Viewer',
+    'FoodStaff',
+  ]);
+}
+
+export function canCreateActivity(user: ImmsUser | null | undefined) {
+  return hasAnyRole(user, [
+    'SuperAdmin',
+    'Admin',
+    'CampusCoordinator',
+    'ProgramCoordinator',
+    'Mentor',
+  ]);
+}
+
+export function canApproveActivity(user: ImmsUser | null | undefined) {
+  return hasAnyRole(user, ['SuperAdmin', 'Admin', 'CampusCoordinator']);
+}
+
+export function canManageActivityCategories(user: ImmsUser | null | undefined) {
+  return hasAnyRole(user, ['SuperAdmin', 'Admin']);
+}
+
+export function canExportActivity(user: ImmsUser | null | undefined) {
+  return hasAnyRole(user, ['SuperAdmin', 'Admin', 'CampusCoordinator', 'Viewer']);
+}
+
+export function canViewActivitySummary(user: ImmsUser | null | undefined) {
+  return canViewActivity(user);
 }

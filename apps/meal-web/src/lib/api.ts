@@ -13,6 +13,12 @@ export type LoginResponse = {
     defaultOrganizationId: string | null;
     campusIds: string[];
     programIds: string[];
+    mentorProfile?: {
+      id: string;
+      campusId: string;
+      programId: string | null;
+      academicYearId: string;
+    } | null;
   };
 };
 
@@ -54,6 +60,7 @@ export function clearTokens() {
     store.removeItem('imms_refresh');
     store.removeItem('imms_user');
     store.removeItem('imms_org');
+    store.removeItem('imms_campus');
     store.removeItem('imms_remember');
   }
 }
@@ -139,6 +146,8 @@ export async function apiWithMeta<T>(
     headers.set('Content-Type', 'application/json');
   }
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+  const activeCampusId = getActiveCampusId();
+  if (activeCampusId) headers.set('X-Active-Campus-Id', activeCampusId);
 
   const res = await fetch(`${API_URL}${path}`, { ...options, headers }).catch((err: unknown) => {
     const raw = err instanceof Error ? err.message : String(err ?? '');
@@ -228,4 +237,59 @@ export function getActiveOrganizationId(): string | null {
   } catch {
     return null;
   }
+}
+
+/** Super Admin campus filter (empty = all campuses). Mentors ignore this — server uses Mentor profile. */
+export function getActiveCampusId(): string | null {
+  if (typeof window === 'undefined') return null;
+  const stored = localStorage.getItem('imms_campus') || sessionStorage.getItem('imms_campus');
+  return stored && stored !== 'all' ? stored : null;
+}
+
+export function setActiveCampusId(campusId: string | null) {
+  if (typeof window === 'undefined') return;
+  const remember =
+    (localStorage.getItem('imms_remember') || sessionStorage.getItem('imms_remember')) !== '0';
+  const store = remember ? localStorage : sessionStorage;
+  for (const s of [localStorage, sessionStorage]) s.removeItem('imms_campus');
+  if (campusId && campusId !== 'all') {
+    store.setItem('imms_campus', campusId);
+  }
+  window.dispatchEvent(new Event('imms-campus'));
+}
+
+/** Fetch binary responses (e.g. activity media) with the same auth headers as `api`. */
+export async function apiBlob(path: string, retried = false): Promise<Blob> {
+  const { accessToken } = getTokens();
+  const headers = new Headers();
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+  const activeCampusId = getActiveCampusId();
+  if (activeCampusId) headers.set('X-Active-Campus-Id', activeCampusId);
+
+  const res = await fetch(`${API_URL}${path}`, { headers }).catch((err: unknown) => {
+    const raw = err instanceof Error ? err.message : String(err ?? '');
+    if (/failed to fetch|networkerror|load failed|network request failed/i.test(raw)) {
+      throw new Error(
+        `Cannot reach the API at ${API_URL}. Start meal-api (port 4000) and open the app from http://localhost:3000.`,
+      );
+    }
+    throw err instanceof Error ? err : new Error(raw || 'Network request failed');
+  });
+
+  if (res.status === 401 && !retried && !path.startsWith('/auth/')) {
+    const ok = await refreshAccessToken();
+    if (ok) return apiBlob(path, true);
+    redirectToLogin();
+    throw new Error('Session expired. Please log in again.');
+  }
+
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    throw new Error(
+      (payload as { message?: string }).message ??
+        (res.status === 401 ? 'Session expired. Please log in again.' : 'Request failed'),
+    );
+  }
+
+  return res.blob();
 }

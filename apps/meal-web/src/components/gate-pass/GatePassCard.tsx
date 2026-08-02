@@ -1,6 +1,8 @@
 'use client';
 
 import { BrandLogo } from '@/components/BrandLogo';
+import { PrintableBarcode } from '@/components/gate-pass/PrintableBarcode';
+import { PrintableQr } from '@/components/gate-pass/PrintableQr';
 import { formatLeaveDate, formatLeaveDateTime } from '@/lib/leave';
 import {
   GATE_PASS_LABELS,
@@ -86,11 +88,23 @@ export function GatePassCard({ data, settings, slot }: Props) {
       </header>
 
       <div className="gpc-body">
-        <Field labelKey="studentName" value={data.studentName} blank={blank} />
+        <div className="gpc-field gpc-name-with-barcode">
+          <BilingualLabel labelKey="studentName" />
+          <span className={`gpc-value ${blank ? 'is-blank' : ''}`}>
+            {blank ? '' : data.studentName || '—'}
+          </span>
+          {showBarcode && data.barcode ? (
+            <div className="gpc-barcode-under-name" title={data.barcode}>
+              <PrintableBarcode
+                value={data.barcode}
+                className="gpc-barcode-svg"
+                displayValue={false}
+                height={16}
+              />
+            </div>
+          ) : null}
+        </div>
         <Field labelKey="studentId" value={data.studentId} blank={blank} mono />
-        {showBarcode ? (
-          <Field labelKey="barcode" value={data.barcode} blank={false} mono />
-        ) : null}
         {settings.showCampus ? (
           <Field labelKey="campus" value={data.campus} blank={blank} />
         ) : null}
@@ -138,18 +152,12 @@ export function GatePassCard({ data, settings, slot }: Props) {
         ) : null}
         <div className="gpc-verify">
           {settings.showQr && verify ? (
-            <div className="gpc-qr-box" aria-hidden title={verify}>
-              {verify
-                .slice(0, 12)
-                .split('')
-                .map((ch, i) => (
-                  <span
-                    key={`${ch}-${i}`}
-                    className="gpc-qr-bar"
-                    style={{ opacity: 0.35 + ((ch.charCodeAt(0) + i) % 5) * 0.12 }}
-                  />
-                ))}
-            </div>
+            <PrintableQr
+              value={verify}
+              className="gpc-qr-img"
+              size={36}
+              title={`Verification ${verify}`}
+            />
           ) : null}
           <div>
             <BilingualLabel labelKey="verification" />

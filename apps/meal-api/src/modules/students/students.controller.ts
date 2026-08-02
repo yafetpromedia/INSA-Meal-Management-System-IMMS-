@@ -142,7 +142,7 @@ export class StudentsController {
 
   @Delete(':id')
   @RequirePermissions('Student.Delete')
-  archive(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.students.archive(user, id);
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.students.remove(user, id);
   }
 }

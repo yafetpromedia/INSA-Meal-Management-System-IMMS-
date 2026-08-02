@@ -731,6 +731,25 @@ export class LeaveService {
     const key = barcode.trim();
     if (!key) throw new BadRequestException('barcode is required');
 
+    // Gate pass verification QR encodes leave number (e.g. LV-2026-0001).
+    const leaveMatch = await this.prisma.leaveRequest.findFirst({
+      where: {
+        leaveNumber: { equals: key, mode: 'insensitive' },
+        deletedAt: null,
+        ...(orgId ? { organizationId: orgId } : {}),
+        ...scopeOrganizationFilter(user),
+        ...scopeCampusFilter(user),
+      },
+      select: { studentId: true },
+    });
+    if (leaveMatch) {
+      const fromLeave = await this.prisma.student.findFirst({
+        where: { id: leaveMatch.studentId, ...scope },
+        include,
+      });
+      if (fromLeave) return fromLeave;
+    }
+
     let student = await this.prisma.student.findFirst({
       where: {
         ...scope,

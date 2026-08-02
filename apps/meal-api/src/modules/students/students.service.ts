@@ -127,27 +127,45 @@ export class StudentsService {
     return student;
   }
 
-  async archive(user: AuthUser, id: string) {
+  /** Permanently remove a student and related operational records. */
+  async remove(user: AuthUser, id: string) {
     const existing = await this.getById(user, id);
-    const student = await this.prisma.student.update({
-      where: { id },
-      data: {
-        deletedAt: new Date(),
-        status: StudentStatus.INACTIVE,
-        deletedById: user.id,
-        updatedById: user.id,
-      },
+
+    await this.prisma.$transaction(async (tx) => {
+      const incidentIds = (
+        await tx.disciplinaryIncident.findMany({
+          where: { studentId: id },
+          select: { id: true },
+        })
+      ).map((r) => r.id);
+
+      if (incidentIds.length) {
+        await tx.disciplinaryAction.deleteMany({
+          where: { incidentId: { in: incidentIds } },
+        });
+        await tx.disciplinaryIncident.deleteMany({ where: { studentId: id } });
+      }
+
+      await tx.activityParticipant.deleteMany({ where: { studentId: id } });
+      await tx.mealRecord.deleteMany({ where: { studentId: id } });
+      await tx.gateLog.deleteMany({ where: { studentId: id } });
+      await tx.leaveRequest.deleteMany({ where: { studentId: id } });
+      await tx.student.delete({ where: { id } });
     });
+
     await this.audit.log({
       userId: user.id,
-      action: 'Student.Delete',
+      action: 'Student.DeletePermanent',
       resource: 'Student',
       resourceId: id,
       organizationId: existing.organizationId,
       campusId: existing.campusId,
       programId: existing.programId,
-      previousValue: existing,
-      newValue: student,
+      previousValue: {
+        studentId: existing.studentId,
+        fullName: existing.fullName,
+        barcode: existing.barcode,
+      },
     });
     return { success: true };
   }
