@@ -8,16 +8,20 @@ import {
   Check,
   Download,
   Pencil,
+  Printer,
   Trash2,
   Upload,
   X,
   ZoomIn,
 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import {
+  ActivityReportDocument,
+  downloadActivityReportHtml,
+} from '@/components/activity/ActivityReportDocument';
 import { VoiceNotePlayer } from '@/components/activity/VoiceNotePlayer';
 import { VoiceNoteRecorder } from '@/components/activity/VoiceNoteRecorder';
 import { Button } from '@/components/ui/Button';
-import { StatusChip } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Input } from '@/components/ui/Input';
@@ -25,9 +29,6 @@ import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/providers/ToastProvider';
 import { api, apiBlob } from '@/lib/api';
 import {
-  activityStatusLabel,
-  activityStatusTone,
-  formatActivityDate,
   formatFileSize,
   formatMediaWhen,
   type ActivityMedia,
@@ -263,17 +264,40 @@ export default function ActivityReportDetailPage() {
             Activity reports
           </Link>
           <h1 className="page-title">{report?.reportNumber ?? 'Activity report'}</h1>
-          <p className="page-sub">Full report record, media, voice notes, and approval workflow.</p>
+          <p className="page-sub">Official template view — edit, approve, download, or print.</p>
         </div>
-        {report && editable ? (
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => router.push(`/activity/${id}/edit`)}
-          >
-            <Pencil size={15} strokeWidth={1.75} aria-hidden />
-            Edit
-          </Button>
+        {report ? (
+          <div className="dash-head-actions">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                downloadActivityReportHtml(report);
+                push({ kind: 'success', title: 'Downloaded', message: 'Open the HTML file and Print → Save as PDF' });
+              }}
+            >
+              <Download size={15} strokeWidth={1.75} aria-hidden />
+              Download
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => router.push(`/activity/${id}/print`)}
+            >
+              <Printer size={15} strokeWidth={1.75} aria-hidden />
+              Print
+            </Button>
+            {editable ? (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => router.push(`/activity/${id}/edit`)}
+              >
+                <Pencil size={15} strokeWidth={1.75} aria-hidden />
+                Edit
+              </Button>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
@@ -292,93 +316,9 @@ export default function ActivityReportDetailPage() {
         />
       ) : (
         <div className="profile-page">
-          <section className="panel">
-            <div className="meal-chips" style={{ marginBottom: 12 }}>
-              <StatusChip tone={activityStatusTone(report.status)}>
-                {activityStatusLabel(report.status)}
-              </StatusChip>
-              <StatusChip tone="info">{report.category?.name}</StatusChip>
-              <StatusChip tone="info">
-                {report.campus?.shortName ?? report.campus?.name}
-              </StatusChip>
-            </div>
-            <h2 style={{ margin: '0 0 8px', fontSize: '1.25rem' }}>{report.title}</h2>
-            <p className="muted" style={{ marginTop: 0 }}>
-              {formatActivityDate(report.reportDate)}
-              {report.startTime ? ` · ${report.startTime}` : ''}
-              {report.endTime ? `–${report.endTime}` : ''}
-              {report.location ? ` · ${report.location}` : ''}
-            </p>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                gap: 12,
-                marginTop: 12,
-              }}
-            >
-              <div>
-                <div className="muted" style={{ fontSize: 12 }}>
-                  Reported by
-                </div>
-                <div>{report.submittedBy?.fullName ?? '—'}</div>
-              </div>
-              <div>
-                <div className="muted" style={{ fontSize: 12 }}>
-                  Reviewed by
-                </div>
-                <div>{report.reviewedBy?.fullName ?? '—'}</div>
-              </div>
-              <div>
-                <div className="muted" style={{ fontSize: 12 }}>
-                  Participants
-                </div>
-                <div>{report.participantCount}</div>
-              </div>
-              <div>
-                <div className="muted" style={{ fontSize: 12 }}>
-                  Program
-                </div>
-                <div>{report.program?.name ?? '—'}</div>
-              </div>
-            </div>
-            {(
-              [
-                ['Objectives', report.objectives],
-                ['Description', report.description],
-                ['Activities performed', report.activitiesPerformed],
-                ['Outcomes', report.outcomes],
-                ['Challenges', report.challenges],
-                ['Recommendations', report.recommendations],
-              ] as const
-            ).map(([label, value]) =>
-              value ? (
-                <div key={label} style={{ marginTop: 14 }}>
-                  <h3 style={{ margin: '0 0 6px', fontSize: '0.95rem' }}>{label}</h3>
-                  <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{value}</p>
-                </div>
-              ) : null,
-            )}
-            {report.reviewNotes ? (
-              <div style={{ marginTop: 14 }}>
-                <h3 style={{ margin: '0 0 6px', fontSize: '0.95rem' }}>Review notes</h3>
-                <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{report.reviewNotes}</p>
-              </div>
-            ) : null}
-            {report.participants?.length ? (
-              <div style={{ marginTop: 14 }}>
-                <h3 style={{ margin: '0 0 6px', fontSize: '0.95rem' }}>Tagged students</h3>
-                <div className="meal-chips">
-                  {report.participants.map((p) => (
-                    <span className="chip" key={p.id}>
-                      {p.student?.fullName} ({p.student?.studentId})
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="form-actions" style={{ marginTop: 18, flexWrap: 'wrap' }}>
+          <ActivityReportDocument report={report}>
+            <div className="art-doc-actions no-print">
+              <div className="form-actions" style={{ flexWrap: 'wrap' }}>
               {editable ? (
                 <Button
                   type="button"
@@ -440,17 +380,18 @@ export default function ActivityReportDetailPage() {
                   Archive
                 </Button>
               ) : null}
+              </div>
+              {canApprove &&
+              (report.status === 'SUBMITTED' || report.status === 'UNDER_REVIEW') ? (
+                <label className="field" style={{ marginTop: 12 }}>
+                  <span>Approval notes (optional)</span>
+                  <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
+                </label>
+              ) : null}
             </div>
-            {canApprove &&
-            (report.status === 'SUBMITTED' || report.status === 'UNDER_REVIEW') ? (
-              <label className="field" style={{ marginTop: 12 }}>
-                <span>Approval notes (optional)</span>
-                <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
-              </label>
-            ) : null}
-          </section>
+          </ActivityReportDocument>
 
-          <section className="panel">
+          <section className="panel art-media-panel no-print">
             <div className="page-head" style={{ marginBottom: 12 }}>
               <div>
                 <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Media & voice notes</h2>

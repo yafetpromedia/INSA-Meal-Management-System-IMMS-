@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, FileText, Mic, Search, Trash2, Upload } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { ActivityReportFormShell } from '@/components/activity/ActivityReportFormShell';
 import { VoiceNoteRecorder } from '@/components/activity/VoiceNoteRecorder';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -273,409 +274,391 @@ export default function NewActivityReportPage() {
     }
   }
 
+
   return (
     <AppShell>
-      <header className="activity-head">
-        <div className="activity-head-text">
+      <div className="page-head">
+        <div>
           <Link href="/activity" className="profile-back">
             <ArrowLeft size={14} strokeWidth={1.75} aria-hidden />
             Activity reports
           </Link>
-          <h1>New report</h1>
-          <p>Write the day, attach photos or a voice note, then save the draft.</p>
         </div>
-      </header>
+      </div>
 
-      <form className="activity-create" onSubmit={onSubmit}>
-        <section className="activity-create-section panel">
-          <div className="activity-create-section-head">
-            <h2>Basics</h2>
-            <p>What happened, where, and when.</p>
-          </div>
-          <div className="activity-create-grid">
-            <label className="field activity-create-span">
-              <span>Title</span>
-              <Input
-                required
-                value={form.title}
-                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                placeholder="e.g. Cybersecurity Lab — Day 3"
-                disabled={loadingOptions}
-              />
-            </label>
+      <form onSubmit={onSubmit}>
+        <ActivityReportFormShell
+          mode="create"
+          title="Write today's activity report"
+          subtitle="Use this official template — add photos or a voice note, then save the draft."
+          footer={
+            <div className="art-form-footer-row">
+              <p className="activity-create-hint">
+                <Mic size={14} strokeWidth={1.75} aria-hidden />
+                {pending.length
+                  ? `${pending.length} file(s) will upload when you save`
+                  : 'You can still add media after saving'}
+              </p>
+              <div className="form-actions">
+                <Button type="button" variant="secondary" onClick={() => router.push('/activity')}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={saving || loadingOptions}>
+                  {saving ? 'Saving…' : 'Save draft'}
+                </Button>
+              </div>
+            </div>
+          }
+        >
+          <section className="art-form-block">
+            <h2>Cover</h2>
+            <div className="art-form-grid">
+              <label className="field art-span">
+                <span>Title</span>
+                <Input
+                  required
+                  value={form.title}
+                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                  placeholder="e.g. Cybersecurity Lab — Day 3"
+                  disabled={loadingOptions}
+                />
+              </label>
+              <label className="field">
+                <span>Category</span>
+                <select
+                  className="select"
+                  required
+                  value={form.categoryId}
+                  onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))}
+                  disabled={loadingOptions || !categories.length}
+                >
+                  {!categories.length ? <option value="">No categories</option> : null}
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Campus</span>
+                <select
+                  className="select"
+                  required
+                  value={form.campusId}
+                  onChange={(e) => setForm((f) => ({ ...f, campusId: e.target.value }))}
+                  disabled={loadingOptions || lockedCampus || !campuses.length}
+                >
+                  {!campuses.length ? <option value="">No campuses</option> : null}
+                  {campuses.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.shortName ?? c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Program</span>
+                <select
+                  className="select"
+                  value={form.programId}
+                  onChange={(e) => setForm((f) => ({ ...f, programId: e.target.value }))}
+                  disabled={loadingOptions}
+                >
+                  <option value="">Optional</option>
+                  {programs.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Academic year</span>
+                <select
+                  className="select"
+                  required
+                  value={form.academicYearId}
+                  onChange={(e) => setForm((f) => ({ ...f, academicYearId: e.target.value }))}
+                  disabled={loadingOptions || !years.length}
+                >
+                  {!years.length ? <option value="">No years</option> : null}
+                  {years.map((y) => (
+                    <option key={y.id} value={y.id}>
+                      {y.name}
+                      {y.isCurrent ? ' (current)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Date</span>
+                <Input
+                  type="date"
+                  required
+                  value={form.reportDate}
+                  onChange={(e) => setForm((f) => ({ ...f, reportDate: e.target.value }))}
+                />
+              </label>
+              <label className="field">
+                <span>Start</span>
+                <Input
+                  type="time"
+                  value={form.startTime}
+                  onChange={(e) => setForm((f) => ({ ...f, startTime: e.target.value }))}
+                />
+              </label>
+              <label className="field">
+                <span>End</span>
+                <Input
+                  type="time"
+                  value={form.endTime}
+                  onChange={(e) => setForm((f) => ({ ...f, endTime: e.target.value }))}
+                />
+              </label>
+              <label className="field">
+                <span>Venue</span>
+                <Input
+                  value={form.location}
+                  onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
+                  placeholder="Lab, hall, outdoor…"
+                />
+              </label>
+              <label className="field">
+                <span>Participants</span>
+                <Input
+                  type="number"
+                  min={0}
+                  value={form.participantCount}
+                  onChange={(e) => setForm((f) => ({ ...f, participantCount: e.target.value }))}
+                />
+              </label>
+            </div>
+          </section>
 
-            <label className="field">
-              <span>Category</span>
-              <select
-                className="select"
-                required
-                value={form.categoryId}
-                onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))}
-                disabled={loadingOptions || !categories.length}
-              >
-                {!categories.length ? <option value="">No categories</option> : null}
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="field">
-              <span>Campus</span>
-              <select
-                className="select"
-                required
-                value={form.campusId}
-                onChange={(e) => setForm((f) => ({ ...f, campusId: e.target.value }))}
-                disabled={loadingOptions || lockedCampus || !campuses.length}
-              >
-                {!campuses.length ? <option value="">No campuses</option> : null}
-                {campuses.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.shortName ?? c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="field">
-              <span>Program</span>
-              <select
-                className="select"
-                value={form.programId}
-                onChange={(e) => setForm((f) => ({ ...f, programId: e.target.value }))}
-                disabled={loadingOptions}
-              >
-                <option value="">Optional</option>
-                {programs.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="field">
-              <span>Academic year</span>
-              <select
-                className="select"
-                required
-                value={form.academicYearId}
-                onChange={(e) => setForm((f) => ({ ...f, academicYearId: e.target.value }))}
-                disabled={loadingOptions || !years.length}
-              >
-                {!years.length ? <option value="">No years</option> : null}
-                {years.map((y) => (
-                  <option key={y.id} value={y.id}>
-                    {y.name}
-                    {y.isCurrent ? ' (current)' : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="field">
-              <span>Date</span>
-              <Input
-                type="date"
-                required
-                value={form.reportDate}
-                onChange={(e) => setForm((f) => ({ ...f, reportDate: e.target.value }))}
-              />
-            </label>
-
-            <label className="field">
-              <span>Start</span>
-              <Input
-                type="time"
-                value={form.startTime}
-                onChange={(e) => setForm((f) => ({ ...f, startTime: e.target.value }))}
-              />
-            </label>
-
-            <label className="field">
-              <span>End</span>
-              <Input
-                type="time"
-                value={form.endTime}
-                onChange={(e) => setForm((f) => ({ ...f, endTime: e.target.value }))}
-              />
-            </label>
-
-            <label className="field">
-              <span>Venue</span>
-              <Input
-                value={form.location}
-                onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
-                placeholder="Lab, hall, outdoor…"
-              />
-            </label>
-
-            <label className="field">
-              <span>Participants</span>
-              <Input
-                type="number"
-                min={0}
-                value={form.participantCount}
-                onChange={(e) => setForm((f) => ({ ...f, participantCount: e.target.value }))}
-              />
-            </label>
-          </div>
-        </section>
-
-        <section className="activity-create-section panel">
-          <div className="activity-create-section-head">
+          <section className="art-form-block">
             <h2>Photos, files &amp; voice</h2>
-            <p>Attach evidence here before you save — or add more later on the report.</p>
-          </div>
-
-          <div className="activity-media-actions">
-            <div
-              className={`upload-dropzone ${dragging ? 'is-dragging' : ''}`}
-              onDragEnter={(e) => {
-                e.preventDefault();
-                dragDepth.current += 1;
-                setDragging(true);
-              }}
-              onDragLeave={(e) => {
-                e.preventDefault();
-                dragDepth.current -= 1;
-                if (dragDepth.current <= 0) {
+            <p className="art-form-lead">Attach evidence here before you save — or add more later.</p>
+            <div className="activity-media-actions">
+              <div
+                className={`upload-dropzone ${dragging ? 'is-dragging' : ''}`}
+                onDragEnter={(e) => {
+                  e.preventDefault();
+                  dragDepth.current += 1;
+                  setDragging(true);
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  dragDepth.current -= 1;
+                  if (dragDepth.current <= 0) {
+                    dragDepth.current = 0;
+                    setDragging(false);
+                  }
+                }}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
                   dragDepth.current = 0;
                   setDragging(false);
-                }
-              }}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                dragDepth.current = 0;
-                setDragging(false);
-                if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
-              }}
-              onClick={() => fileRef.current?.click()}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') fileRef.current?.click();
-              }}
-            >
-              <Upload size={22} strokeWidth={1.75} aria-hidden />
-              <strong>Drop photos or files</strong>
-              <span className="muted">Images, PDF, Word, PowerPoint, video, or audio</span>
-              <input
-                ref={fileRef}
-                type="file"
-                multiple
-                hidden
-                accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,video/mp4,video/webm,audio/*"
-                onChange={(e) => {
-                  if (e.target.files) addFiles(e.target.files);
-                  e.target.value = '';
+                  if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
                 }}
-              />
+                onClick={() => fileRef.current?.click()}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') fileRef.current?.click();
+                }}
+              >
+                <Upload size={22} strokeWidth={1.75} aria-hidden />
+                <strong>Drop photos or files</strong>
+                <span className="muted">Images, PDF, Word, PowerPoint, video, or audio</span>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  multiple
+                  hidden
+                  accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,video/mp4,video/webm,audio/*"
+                  onChange={(e) => {
+                    if (e.target.files) addFiles(e.target.files);
+                    e.target.value = '';
+                  }}
+                />
+              </div>
+              <div className="activity-voice-panel">
+                <strong>Voice note</strong>
+                <p className="muted" style={{ margin: 0, fontSize: '0.82rem' }}>
+                  Record a short spoken update from your microphone.
+                </p>
+                <VoiceNoteRecorder
+                  disabled={saving}
+                  onRecorded={(file) => addFiles([file], 'Voice note')}
+                />
+              </div>
             </div>
-
-            <div className="activity-voice-panel">
-              <strong>Voice note</strong>
-              <p className="muted" style={{ margin: 0, fontSize: '0.82rem' }}>
-                Record a short spoken update from your microphone.
+            {pending.length ? (
+              <>
+                <p className="activity-pending-summary muted">
+                  Ready to attach: {pendingSummary.photos} photo
+                  {pendingSummary.photos === 1 ? '' : 's'}
+                  {pendingSummary.voices
+                    ? ` · ${pendingSummary.voices} voice note${pendingSummary.voices === 1 ? '' : 's'}`
+                    : ''}
+                  {pendingSummary.other
+                    ? ` · ${pendingSummary.other} other file${pendingSummary.other === 1 ? '' : 's'}`
+                    : ''}
+                </p>
+                <ul className="activity-pending-list">
+                  {pending.map((item) => {
+                    const kind = kindOf(item.file);
+                    return (
+                      <li key={item.id} className="activity-pending-item">
+                        <div className="activity-pending-thumb" aria-hidden>
+                          {kind === 'image' && item.previewUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={item.previewUrl} alt="" />
+                          ) : kind === 'audio' ? (
+                            <Mic size={18} strokeWidth={1.75} />
+                          ) : (
+                            <FileText size={18} strokeWidth={1.75} />
+                          )}
+                        </div>
+                        <div className="activity-pending-meta">
+                          <strong>{item.caption || item.file.name}</strong>
+                          <span className="muted">
+                            {formatFileSize(item.file.size)}
+                            {kind === 'audio' ? ' · Voice note' : ''}
+                          </span>
+                          {kind === 'audio' && item.previewUrl ? (
+                            // eslint-disable-next-line jsx-a11y/media-has-caption
+                            <audio
+                              controls
+                              src={item.previewUrl}
+                              preload="metadata"
+                              className="activity-pending-audio"
+                            />
+                          ) : null}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => removePending(item.id)}
+                          aria-label={`Remove ${item.file.name}`}
+                        >
+                          <Trash2 size={14} strokeWidth={1.75} aria-hidden />
+                          Remove
+                        </Button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            ) : (
+              <p className="muted" style={{ margin: '8px 0 0', fontSize: '0.82rem' }}>
+                No attachments yet — photos and voice notes are optional.
               </p>
-              <VoiceNoteRecorder
-                disabled={saving}
-                onRecorded={(file) => addFiles([file], 'Voice note')}
+            )}
+          </section>
+
+          <section className="art-form-block">
+            <h2>Narrative</h2>
+            <label className="field">
+              <span>What happened</span>
+              <textarea
+                className="textarea art-textarea"
+                rows={5}
+                required
+                value={form.description}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                placeholder="Summarize the session for campus and national review…"
               />
-            </div>
-          </div>
+            </label>
+            <button
+              type="button"
+              className="activity-more-toggle"
+              onClick={() => setShowMore((v) => !v)}
+              aria-expanded={showMore}
+            >
+              {showMore ? 'Hide extra details' : 'Add objectives, outcomes & more (optional)'}
+            </button>
+            {showMore ? (
+              <div className="art-form-stack" style={{ marginTop: 12 }}>
+                {(
+                  [
+                    ['objectives', 'Objectives'],
+                    ['activitiesPerformed', 'Activities performed'],
+                    ['outcomes', 'Outcomes'],
+                    ['challenges', 'Challenges'],
+                    ['recommendations', 'Recommendations'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <label className="field" key={key}>
+                    <span>
+                      {label}
+                      <em className="muted"> · optional</em>
+                    </span>
+                    <textarea
+                      className="textarea art-textarea"
+                      rows={3}
+                      value={form[key]}
+                      onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                    />
+                  </label>
+                ))}
+              </div>
+            ) : null}
+          </section>
 
-          {pending.length ? (
-            <>
-              <p className="activity-pending-summary muted">
-                Ready to attach: {pendingSummary.photos} photo
-                {pendingSummary.photos === 1 ? '' : 's'}
-                {pendingSummary.voices
-                  ? ` · ${pendingSummary.voices} voice note${pendingSummary.voices === 1 ? '' : 's'}`
-                  : ''}
-                {pendingSummary.other
-                  ? ` · ${pendingSummary.other} other file${pendingSummary.other === 1 ? '' : 's'}`
-                  : ''}
-              </p>
-              <ul className="activity-pending-list">
-                {pending.map((item) => {
-                  const kind = kindOf(item.file);
-                  return (
-                    <li key={item.id} className="activity-pending-item">
-                      <div className="activity-pending-thumb" aria-hidden>
-                        {kind === 'image' && item.previewUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={item.previewUrl} alt="" />
-                        ) : kind === 'audio' ? (
-                          <Mic size={18} strokeWidth={1.75} />
-                        ) : (
-                          <FileText size={18} strokeWidth={1.75} />
-                        )}
-                      </div>
-                      <div className="activity-pending-meta">
-                        <strong>{item.caption || item.file.name}</strong>
-                        <span className="muted">
-                          {formatFileSize(item.file.size)}
-                          {kind === 'audio' ? ' · Voice note' : ''}
-                        </span>
-                        {kind === 'audio' && item.previewUrl ? (
-                          // eslint-disable-next-line jsx-a11y/media-has-caption
-                          <audio
-                            controls
-                            src={item.previewUrl}
-                            preload="metadata"
-                            className="activity-pending-audio"
-                          />
-                        ) : null}
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => removePending(item.id)}
-                        aria-label={`Remove ${item.file.name}`}
-                      >
-                        <Trash2 size={14} strokeWidth={1.75} aria-hidden />
-                        Remove
-                      </Button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          ) : (
-            <p className="muted" style={{ margin: 0, fontSize: '0.82rem' }}>
-              No attachments yet — photos and voice notes are optional.
-            </p>
-          )}
-        </section>
-
-        <section className="activity-create-section panel">
-          <div className="activity-create-section-head">
-            <h2>Description</h2>
-            <p>Short summary of the activity (required).</p>
-          </div>
-          <label className="field">
-            <span>What happened</span>
-            <textarea
-              className="textarea"
-              rows={5}
-              required
-              value={form.description}
-              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              placeholder="Summarize the session for campus and national review…"
-            />
-          </label>
-
-          <button
-            type="button"
-            className="activity-more-toggle"
-            onClick={() => setShowMore((v) => !v)}
-            aria-expanded={showMore}
-          >
-            {showMore ? 'Hide extra details' : 'Add objectives, outcomes & more (optional)'}
-          </button>
-
-          {showMore ? (
-            <div className="activity-create-stack" style={{ marginTop: 12 }}>
-              {(
-                [
-                  ['objectives', 'Objectives'],
-                  ['activitiesPerformed', 'Activities performed'],
-                  ['outcomes', 'Outcomes'],
-                  ['challenges', 'Challenges'],
-                  ['recommendations', 'Recommendations'],
-                ] as const
-              ).map(([key, label]) => (
-                <label className="field" key={key}>
-                  <span>
-                    {label}
-                    <em className="muted"> · optional</em>
-                  </span>
-                  <textarea
-                    className="textarea"
-                    rows={3}
-                    value={form[key]}
-                    onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-                  />
-                </label>
-              ))}
-            </div>
-          ) : null}
-        </section>
-
-        <section className="activity-create-section panel">
-          <div className="activity-create-section-head">
+          <section className="art-form-block">
             <h2>Students</h2>
-            <p>Optional tags for people who took part.</p>
-          </div>
-          <label className="field">
-            <span>Search students</span>
-            <div className="activity-search">
-              <Search size={15} strokeWidth={1.75} aria-hidden />
-              <Input
-                placeholder="Name or student ID…"
-                value={studentQuery}
-                onChange={(e) => setStudentQuery(e.target.value)}
-              />
-            </div>
-          </label>
-          {hits.length ? (
-            <ul className="search-hits" style={{ marginTop: 8 }}>
-              {hits.map((h) => (
-                <li key={h.id}>
+            <p className="art-form-lead">Optional tags for people who took part.</p>
+            <label className="field">
+              <span>Search students</span>
+              <div className="activity-search">
+                <Search size={15} strokeWidth={1.75} aria-hidden />
+                <Input
+                  placeholder="Name or student ID…"
+                  value={studentQuery}
+                  onChange={(e) => setStudentQuery(e.target.value)}
+                />
+              </div>
+            </label>
+            {hits.length ? (
+              <ul className="search-hits" style={{ marginTop: 8 }}>
+                {hits.map((h) => (
+                  <li key={h.id}>
+                    <button
+                      type="button"
+                      className="search-hit"
+                      onClick={() => {
+                        setParticipants((prev) =>
+                          prev.some((p) => p.id === h.id) ? prev : [...prev, h],
+                        );
+                        setStudentQuery('');
+                        setHits([]);
+                      }}
+                    >
+                      {h.fullName} · {h.studentId}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {participants.length ? (
+              <div className="meal-chips" style={{ marginTop: 10 }}>
+                {participants.map((p) => (
                   <button
+                    key={p.id}
                     type="button"
-                    className="search-hit"
-                    onClick={() => {
-                      setParticipants((prev) =>
-                        prev.some((p) => p.id === h.id) ? prev : [...prev, h],
-                      );
-                      setStudentQuery('');
-                      setHits([]);
-                    }}
+                    className="chip"
+                    onClick={() => setParticipants((prev) => prev.filter((x) => x.id !== p.id))}
                   >
-                    {h.fullName} · {h.studentId}
+                    {p.fullName} ×
                   </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {participants.length ? (
-            <div className="meal-chips" style={{ marginTop: 10 }}>
-              {participants.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="chip"
-                  onClick={() => setParticipants((prev) => prev.filter((x) => x.id !== p.id))}
-                >
-                  {p.fullName} ×
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </section>
-
-        <div className="activity-create-foot panel">
-          <p className="activity-create-hint">
-            <Mic size={14} strokeWidth={1.75} aria-hidden />
-            {pending.length
-              ? `${pending.length} file(s) will upload when you save`
-              : 'You can still add media after saving'}
-          </p>
-          <div className="form-actions">
-            <Button type="button" variant="secondary" onClick={() => router.push('/activity')}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={saving || loadingOptions}>
-              {saving ? 'Saving…' : 'Save draft'}
-            </Button>
-          </div>
-        </div>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        </ActivityReportFormShell>
       </form>
     </AppShell>
   );
