@@ -80,7 +80,12 @@ export default function ActivityReportsPage() {
       setItems(rows);
       setTotal(Number(meta.total ?? rows.length));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load activity reports');
+      const raw = err instanceof Error ? err.message : 'Failed to load activity reports';
+      setError(
+        /cannot get .*activity-reports/i.test(raw)
+          ? 'Activity API is not running. Restart meal-api (port 4000), then refresh this page.'
+          : raw,
+      );
     } finally {
       setLoading(false);
     }

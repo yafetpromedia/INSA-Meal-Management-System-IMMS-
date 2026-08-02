@@ -23,6 +23,9 @@ function BilingualLabel({ labelKey }: { labelKey: GatePassLabelKey }) {
   return (
     <span className="gpc-label">
       <span className="gpc-label-en">{en}</span>
+      <span className="gpc-label-sep" aria-hidden>
+        ·
+      </span>
       <span className="gpc-label-am" lang="am">
         {am}
       </span>

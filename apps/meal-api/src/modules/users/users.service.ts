@@ -495,6 +495,8 @@ export class UsersService {
     actor: AuthUser,
     userId: string,
     data: Partial<{
+      username: string;
+      email: string | null;
       fullName: string;
       phone: string;
       campusIds: string[];
@@ -506,6 +508,36 @@ export class UsersService {
     const target = await this.assertCanManageUser(actor, userId);
     const isMentor = target.roles.some((r) => r.role.name === 'Mentor');
     const orgIds = target.organizationAssignments.map((o) => o.organizationId);
+
+    let nextUsername: string | undefined;
+    let nextEmail: string | null | undefined;
+
+    if (data.username !== undefined) {
+      if (!isValidUsername(data.username)) {
+        throw new BadRequestException(USERNAME_POLICY_MESSAGE);
+      }
+      nextUsername = normalizeUsername(data.username);
+      if (nextUsername !== target.username) {
+        const taken = await this.prisma.user.findFirst({
+          where: { username: nextUsername, deletedAt: null },
+        });
+        if (taken && taken.id !== userId) {
+          throw new ConflictException('Username is already taken');
+        }
+      }
+    }
+
+    if (data.email !== undefined) {
+      nextEmail = data.email?.trim() ? data.email.trim().toLowerCase() : null;
+      if (nextEmail && nextEmail !== (target.email ?? null)) {
+        const taken = await this.prisma.user.findFirst({
+          where: { email: nextEmail, deletedAt: null },
+        });
+        if (taken && taken.id !== userId) {
+          throw new ConflictException('Email is already in use');
+        }
+      }
+    }
 
     let campusIds = data.campusIds;
     if (isMentor) {
@@ -584,8 +616,10 @@ export class UsersService {
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: {
+        ...(nextUsername !== undefined ? { username: nextUsername } : {}),
+        ...(nextEmail !== undefined ? { email: nextEmail } : {}),
         ...(data.fullName !== undefined ? { fullName: data.fullName } : {}),
-        ...(data.phone !== undefined ? { phone: data.phone } : {}),
+        ...(data.phone !== undefined ? { phone: data.phone || null } : {}),
       },
       select: {
         id: true,
@@ -610,7 +644,15 @@ export class UsersService {
       action: 'User.Update',
       resource: 'User',
       resourceId: userId,
+      previousValue: {
+        username: target.username,
+        email: target.email,
+        fullName: target.fullName,
+        phone: target.phone,
+      },
       newValue: {
+        username: nextUsername,
+        email: nextEmail,
         fullName: data.fullName,
         phone: data.phone,
         campusIds,

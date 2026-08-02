@@ -253,6 +253,8 @@ export default function StaffPage() {
           await api(`/mentors/${editing.id}`, {
             method: 'PATCH',
             body: JSON.stringify({
+              username: form.username.trim().toLowerCase(),
+              email: form.email.trim() || null,
               fullName: form.fullName.trim(),
               phone: form.phone.trim() || undefined,
               campusId: form.campusId,
@@ -273,6 +275,8 @@ export default function StaffPage() {
           await api(`/mentors/${editing.id}`, {
             method: 'PATCH',
             body: JSON.stringify({
+              username: form.username.trim().toLowerCase(),
+              email: form.email.trim() || null,
               fullName: form.fullName.trim(),
               phone: form.phone.trim() || undefined,
               campusIds: form.campusIds,
@@ -464,7 +468,6 @@ export default function StaffPage() {
             onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
             required
             minLength={3}
-            disabled={modal === 'edit'}
             autoComplete="off"
           />
           <Input
@@ -472,8 +475,12 @@ export default function StaffPage() {
             type="email"
             value={form.email}
             onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-            disabled={modal === 'edit'}
           />
+          {modal === 'edit' ? (
+            <p className="muted" style={{ margin: 0, fontSize: '0.8rem' }}>
+              Changing username or email updates how they sign in.
+            </p>
+          ) : null}
           {modal === 'create' ? (
             <div style={{ display: 'grid', gap: 8 }}>
               <Input

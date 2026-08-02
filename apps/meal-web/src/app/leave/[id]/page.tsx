@@ -14,6 +14,7 @@ import { Modal } from '@/components/ui/Modal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/providers/ToastProvider';
 import { api } from '@/lib/api';
+import { GATE_PASS_LABELS } from '@/lib/gate-pass-print';
 import {
   formatLeaveDateTime,
   leaveStatusLabel,
@@ -21,6 +22,21 @@ import {
   type LeaveRequest,
 } from '@/lib/leave';
 import { canApproveLeave, readStoredUser } from '@/lib/rbac';
+
+function PassLabel({ labelKey }: { labelKey: keyof typeof GATE_PASS_LABELS }) {
+  const { en, am } = GATE_PASS_LABELS[labelKey];
+  return (
+    <span className="gpc-label">
+      <span className="gpc-label-en">{en}</span>
+      <span className="gpc-label-sep" aria-hidden>
+        ·
+      </span>
+      <span className="gpc-label-am" lang="am">
+        {am}
+      </span>
+    </span>
+  );
+}
 
 export default function LeaveDetailPage() {
   const router = useRouter();
@@ -207,7 +223,9 @@ export default function LeaveDetailPage() {
           <section className="panel gate-pass" aria-label="Gate pass">
             <div className="gate-pass-head">
               <div>
-                <p className="gate-pass-kicker">INSA · Gate Pass</p>
+                <p className="gate-pass-kicker">
+                  INSA · Gate Pass · <span lang="am">የመውጫ ፈቃድ</span>
+                </p>
                 <h2>{leave.leaveNumber}</h2>
               </div>
               <StatusChip tone={leaveStatusTone(leave.status)}>
@@ -216,14 +234,14 @@ export default function LeaveDetailPage() {
             </div>
             <div className="gate-pass-grid">
               <div>
-                <span className="muted">Student</span>
+                <PassLabel labelKey="studentName" />
                 <strong>{leave.student?.fullName ?? '—'}</strong>
                 <div className="muted" style={{ fontSize: '0.85rem' }}>
                   {leave.student?.studentId}
                 </div>
               </div>
               <div>
-                <span className="muted">Barcode</span>
+                <PassLabel labelKey="barcode" />
                 {(leave.student?.barcode ?? leave.student?.studentId) ? (
                   <PrintableBarcode
                     value={leave.student?.barcode || leave.student?.studentId || ''}
@@ -235,34 +253,34 @@ export default function LeaveDetailPage() {
                 )}
               </div>
               <div>
-                <span className="muted">Gate verification</span>
+                <PassLabel labelKey="verification" />
                 <strong>
                   {leave.status === 'CHECKED_OUT' || leave.status === 'OVERDUE'
-                    ? 'Exit verified at gate'
+                    ? 'Exit verified at gate · መውጫ ተረጋግጧል'
                     : leave.status === 'RETURNED'
-                      ? 'Return verified at gate'
+                      ? 'Return verified at gate · መመለስ ተረጋግጧል'
                       : leave.status === 'APPROVED'
-                        ? 'Approved — waiting for gate scan'
+                        ? 'Approved — waiting for gate scan · ጸድቋል — በበር ይጠበቃል'
                         : leaveStatusLabel(leave.status)}
                 </strong>
                 <div className="muted" style={{ fontSize: '0.8rem' }}>
-                  Scan at Gate Scanner (/gate) using student barcode or leave number
+                  Scan at Gate Scanner (/gate) · በበር ስካነር ይቃኙ
                 </div>
               </div>
               <div>
-                <span className="muted">Leave type</span>
+                <PassLabel labelKey="leaveType" />
                 <strong>{leave.leaveType?.name ?? '—'}</strong>
               </div>
               <div>
-                <span className="muted">Destination</span>
+                <PassLabel labelKey="destination" />
                 <strong>{leave.destination}</strong>
               </div>
               <div>
-                <span className="muted">Expected return</span>
+                <PassLabel labelKey="expectedReturn" />
                 <strong>{formatLeaveDateTime(leave.expectedReturnTime)}</strong>
               </div>
               <div>
-                <span className="muted">Campus / Program</span>
+                <PassLabel labelKey="campus" />
                 <strong>
                   {leave.campus?.shortName ?? leave.campus?.name ?? '—'}
                   {leave.program?.name ? ` · ${leave.program.name}` : ''}

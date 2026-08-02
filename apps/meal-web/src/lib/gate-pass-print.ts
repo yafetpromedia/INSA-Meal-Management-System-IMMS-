@@ -20,8 +20,13 @@ export type GatePassTemplateSettings = {
 
 export const GATE_PASS_SETTINGS_KEY = 'settings.gatePass';
 
+/** True when a string includes Ethiopic (Amharic) characters. */
+export function hasAmharic(text: string) {
+  return /[\u1200-\u137F]/.test(text);
+}
+
 export const DEFAULT_GATE_PASS_SETTINGS: GatePassTemplateSettings = {
-  headerText: 'INSA Summer Camp',
+  headerText: 'INSA Summer Camp · የኢንሳ የበጋ ካምፕ',
   subHeaderText: 'Gate Pass · የመውጫ ፈቃድ',
   footerText:
     'Scan barcode or verification QR at Gate Scanner. · ባርኮድ ወይም የማረጋገጫ QR በበር ስካነር ይቃኙ።',
@@ -157,17 +162,27 @@ export function mergeGatePassSettings(
   const o = raw as Record<string, unknown>;
   const layout = Number(o.cardsPerPage);
 
-  // Upgrade legacy English-only sub-header/footer to bilingual (keep camp name English-only)
+  // Upgrade English-only header/sub/footer to bilingual when Amharic is missing
   let headerText =
     typeof o.headerText === 'string' ? o.headerText : base.headerText;
   let subHeaderText =
     typeof o.subHeaderText === 'string' ? o.subHeaderText : base.subHeaderText;
   let footerText = typeof o.footerText === 'string' ? o.footerText : base.footerText;
-  if (headerText === 'INSA Summer Camp · የኢንሳ የበጋ ካምፕ') {
-    headerText = 'INSA Summer Camp';
+
+  if (headerText === 'INSA Summer Camp' || !hasAmharic(headerText)) {
+    if (headerText === 'INSA Summer Camp' || headerText === base.headerText.split(' · ')[0]) {
+      headerText = base.headerText;
+    } else if (!hasAmharic(headerText)) {
+      headerText = `${headerText} · የኢንሳ የበጋ ካምፕ`;
+    }
   }
-  if (subHeaderText === 'Gate Pass') subHeaderText = base.subHeaderText;
-  if (footerText === 'Present this pass with your student ID at the gate.') {
+  if (subHeaderText === 'Gate Pass' || !hasAmharic(subHeaderText)) {
+    subHeaderText = base.subHeaderText;
+  }
+  if (
+    footerText === 'Present this pass with your student ID at the gate.' ||
+    !hasAmharic(footerText)
+  ) {
     footerText = base.footerText;
   }
 

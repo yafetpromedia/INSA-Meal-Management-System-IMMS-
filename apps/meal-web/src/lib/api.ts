@@ -168,8 +168,19 @@ export async function apiWithMeta<T>(
   }
 
   if (!res.ok) {
+    const body = payload as {
+      message?: string;
+      errors?: Array<{ field?: string; message?: string }>;
+    };
+    const fieldMsg = Array.isArray(body.errors)
+      ? body.errors
+          .map((e) => e.message || e.field)
+          .filter(Boolean)
+          .join('; ')
+      : '';
     throw new Error(
-      (payload as { message?: string }).message ??
+      fieldMsg ||
+        body.message ||
         (res.status === 401 ? 'Session expired. Please log in again.' : 'Request failed'),
     );
   }

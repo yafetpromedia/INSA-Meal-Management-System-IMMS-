@@ -48,7 +48,7 @@ function statusIn(status: ActivityReportStatus, allowed: ActivityReportStatus[])
   return allowed.includes(status);
 }
 
-const reportInclude: Prisma.ActivityReportInclude = {
+const reportInclude = {
   category: { select: { id: true, name: true, active: true } },
   campus: { select: { id: true, name: true, shortName: true } },
   program: { select: { id: true, name: true } },
@@ -56,7 +56,7 @@ const reportInclude: Prisma.ActivityReportInclude = {
   submittedBy: { select: { id: true, fullName: true } },
   reviewedBy: { select: { id: true, fullName: true } },
   media: {
-    orderBy: [{ sortOrder: 'asc' }, { uploadedAt: 'asc' }],
+    orderBy: [{ sortOrder: 'asc' as const }, { uploadedAt: 'asc' as const }],
     include: { uploadedBy: { select: { id: true, fullName: true } } },
   },
   participants: {
@@ -67,7 +67,7 @@ const reportInclude: Prisma.ActivityReportInclude = {
     },
   },
   _count: { select: { media: true, participants: true } },
-};
+} satisfies Prisma.ActivityReportInclude;
 
 @Injectable()
 export class ActivityService {

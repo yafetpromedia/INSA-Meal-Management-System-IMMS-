@@ -3304,9 +3304,27 @@ textarea {
 
 .gate-pass-kicker {
   margin: 0 0 4px;
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.gate-pass-kicker [lang='am'],
+.gate-pass .gpc-label-am {
+  font-family: var(--font-ethiopic, 'Noto Sans Ethiopic'), 'Segoe UI', sans-serif;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-secondary);
+}
+
+.gate-pass-grid > div > .gpc-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  margin-bottom: 4px;
+  font-size: 0.78rem;
   color: var(--muted);
 }
 
@@ -3423,7 +3441,13 @@ textarea {
   flex-direction: column;
   gap: 2mm;
   background: #fff;
-  font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  font-family:
+    'Segoe UI',
+    'Noto Sans Ethiopic',
+    var(--font-ethiopic, sans-serif),
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
   font-size: 7.5pt;
   line-height: 1.25;
   color: #111;
@@ -3521,13 +3545,14 @@ textarea {
 
 .gpc-label {
   display: flex;
-  flex-direction: column;
-  gap: 0.1mm;
-  font-size: 0.62em;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35mm 1.2mm;
+  font-size: 0.72em;
   text-transform: none;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   color: #555;
-  line-height: 1.15;
+  line-height: 1.2;
 }
 
 .gpc-label-en {
@@ -3536,10 +3561,16 @@ textarea {
   letter-spacing: 0.04em;
 }
 
-.gpc-label-am {
+.gpc-label-sep {
+  color: #999;
   font-weight: 500;
-  font-size: 1.05em;
-  color: #333;
+}
+
+.gpc-label-am {
+  font-family: var(--font-ethiopic, 'Noto Sans Ethiopic'), 'Segoe UI', sans-serif;
+  font-weight: 600;
+  font-size: 1.08em;
+  color: #222;
 }
 
 .gpc-field.is-wide {

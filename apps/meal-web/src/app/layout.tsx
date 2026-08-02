@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Manrope, Source_Sans_3 } from 'next/font/google';
+import { Manrope, Noto_Sans_Ethiopic, Source_Sans_3 } from 'next/font/google';
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
 import { ToastProvider } from '@/components/providers/ToastProvider';
 import './globals.css';
@@ -14,6 +14,13 @@ const sans = Source_Sans_3({
   subsets: ['latin'],
   variable: '--font-sans',
   display: 'swap',
+});
+
+const ethiopic = Noto_Sans_Ethiopic({
+  subsets: ['ethiopic'],
+  variable: '--font-ethiopic',
+  display: 'swap',
+  weight: ['400', '500', '600', '700'],
 });
 
 export const metadata: Metadata = {
@@ -33,7 +40,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-theme="light" className={`${display.variable} ${sans.variable}`}>
+    <html
+      lang="en"
+      data-theme="light"
+      className={`${display.variable} ${sans.variable} ${ethiopic.variable}`}
+    >
       <body>
         <ThemeProvider>
           <ToastProvider>{children}</ToastProvider>

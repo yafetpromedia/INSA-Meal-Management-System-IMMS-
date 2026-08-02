@@ -38,7 +38,12 @@ class CreateMentorDto {
 }
 
 class UpdateMentorDto {
-  @IsOptional() @IsString() fullName?: string;
+  @IsOptional() @IsString() @MinLength(3) username?: string;
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null && v !== undefined && v !== '')
+  @IsEmail()
+  email?: string | null;
+  @IsOptional() @IsString() @MinLength(2) fullName?: string;
   @IsOptional() @IsString() phone?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) campusIds?: string[];
   @IsOptional() @IsString() campusId?: string;

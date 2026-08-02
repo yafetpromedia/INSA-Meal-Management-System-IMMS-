@@ -464,8 +464,8 @@ export default function SettingsPage() {
         <form className="panel settings-form" onSubmit={onSaveGatePass}>
           <h2 className="settings-heading">Gate Pass Designer</h2>
           <p className="muted" style={{ margin: '0 0 12px', fontSize: '0.85rem' }}>
-            Configure printable A4 gate pass cards. Changes apply to Print Selected, blank
-            templates, and leave detail printing.
+            Configure printable A4 gate pass cards (English · Amharic). Field labels are bilingual
+            automatically. Use Amharic in header/sub-header/footer — e.g. Gate Pass · የመውጫ ፈቃድ.
           </p>
           <div className="settings-fields">
             <Input
