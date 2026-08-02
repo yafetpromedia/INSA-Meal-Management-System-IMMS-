@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, FileText, Mic, Search, Trash2, Upload } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { downloadBlankActivityWordTemplate } from '@/components/activity/ActivityReportBlankTemplate';
 import { ActivityReportFormShell } from '@/components/activity/ActivityReportFormShell';
 import { VoiceNoteRecorder } from '@/components/activity/VoiceNoteRecorder';
 import { Button } from '@/components/ui/Button';
@@ -283,6 +284,26 @@ export default function NewActivityReportPage() {
             <ArrowLeft size={14} strokeWidth={1.75} aria-hidden />
             Activity reports
           </Link>
+        </div>
+        <div className="dash-head-actions">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              downloadBlankActivityWordTemplate();
+              push({
+                kind: 'success',
+                title: 'Word template downloaded',
+                message: 'Open in Word to type, or print and write by hand',
+              });
+            }}
+          >
+            <FileText size={15} strokeWidth={1.75} aria-hidden />
+            Download Word template
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => router.push('/activity/template')}>
+            Print blank form
+          </Button>
         </div>
       </div>
 

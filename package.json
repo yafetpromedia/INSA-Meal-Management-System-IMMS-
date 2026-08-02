@@ -2,7 +2,7 @@
   "name": "meal-management-system",
   "version": "0.1.0",
   "private": true,
-  "description": "INSA Meal Management System (IMMS)",
+  "description": "IMMS Camp Management",
   "workspaces": [
     "apps/*"
   ],

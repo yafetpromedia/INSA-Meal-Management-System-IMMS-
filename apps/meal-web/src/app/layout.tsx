@@ -24,7 +24,7 @@ const ethiopic = Noto_Sans_Ethiopic({
 });
 
 export const metadata: Metadata = {
-  title: 'IMMS — INSA Meal Management System',
+  title: 'IMMS — Camp Management',
   description: 'Multi-campus meal distribution and verification for training programs',
   icons: {
     icon: '/brand/insa-mark.png',

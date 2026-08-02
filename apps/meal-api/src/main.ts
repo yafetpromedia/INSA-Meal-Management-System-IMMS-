@@ -95,8 +95,8 @@ async function bootstrap() {
   const swaggerEnabled = process.env.SWAGGER_ENABLED === 'true' && !isProd;
   if (swaggerEnabled) {
     const config = new DocumentBuilder()
-      .setTitle('INSA Meal Management System API')
-      .setDescription('IMMS REST API (SRS Part 6)')
+      .setTitle('IMMS Camp Management API')
+      .setDescription('IMMS REST API')
       .setVersion('1')
       .addBearerAuth()
       .build();

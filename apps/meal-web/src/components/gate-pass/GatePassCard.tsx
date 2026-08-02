@@ -69,7 +69,7 @@ export function GatePassCard({ data, settings, slot }: Props) {
     <article className={`gpc-card ${blank ? 'is-blank-card' : ''}`}>
       <header className="gpc-head">
         {settings.showLogo ? (
-          <BrandLogo variant="mark" size={28} className="gpc-logo" alt="INSA" />
+          <BrandLogo variant="mark" size={28} className="gpc-logo" alt="IMMS" />
         ) : (
           <span className="gpc-logo-spacer" aria-hidden />
         )}

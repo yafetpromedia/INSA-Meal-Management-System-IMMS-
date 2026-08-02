@@ -48,7 +48,7 @@ function ResetForm() {
   return (
     <form className="login-card" onSubmit={onSubmit}>
       <div className="brand login-brand">
-        <BrandLogo variant="mark" size={48} alt="INSA" />
+        <BrandLogo variant="mark" size={48} alt="IMMS" />
         <div>
           IMMS
           <span>Choose a new password</span>

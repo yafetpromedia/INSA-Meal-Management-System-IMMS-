@@ -137,7 +137,7 @@ export default function ActivityPresentationPage() {
             </Link>
             <h1 className="page-title">Presentation mode</h1>
             <p className="page-sub">
-              Large photos and report summaries for INSA leadership briefings.
+              Large photos and report summaries for IMMS leadership briefings.
             </p>
           </div>
           <Button type="button" variant="secondary" onClick={() => setFullscreen(true)}>

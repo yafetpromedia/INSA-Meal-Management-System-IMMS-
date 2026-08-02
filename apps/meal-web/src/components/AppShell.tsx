@@ -373,10 +373,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <aside className={`sidebar ${navOpen ? 'open' : ''}`} aria-label="Main navigation">
         <div className="brand">
-          <BrandLogo variant="mark" size={40} alt="INSA" />
+          <BrandLogo variant="mark" size={40} alt="IMMS" />
           <div>
             IMMS
-            <span>Meal Management</span>
+            <span>Camp Management</span>
           </div>
         </div>
         <nav className="nav">

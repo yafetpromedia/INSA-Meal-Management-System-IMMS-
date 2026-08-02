@@ -224,7 +224,7 @@ export default function LeaveDetailPage() {
             <div className="gate-pass-head">
               <div>
                 <p className="gate-pass-kicker">
-                  INSA · Gate Pass · <span lang="am">የመውጫ ፈቃድ</span>
+                  IMMS · Gate Pass · <span lang="am">የመውጫ ፈቃድ</span>
                 </p>
                 <h2>{leave.leaveNumber}</h2>
               </div>

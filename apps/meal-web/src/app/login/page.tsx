@@ -62,10 +62,10 @@ export default function LoginPage() {
     <div className="login-page">
       <form className="login-card" onSubmit={onSubmit} noValidate>
         <div className="brand login-brand">
-          <BrandLogo variant="mark" size={56} alt="INSA" />
+          <BrandLogo variant="mark" size={56} alt="IMMS" />
           <div>
             IMMS
-            <span>INSA Meal Management</span>
+            <span>Camp Management</span>
           </div>
         </div>
         <p>Sign in with your username. Email still works if you prefer.</p>

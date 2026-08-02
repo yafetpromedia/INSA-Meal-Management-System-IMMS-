@@ -149,7 +149,7 @@ export default function SettingsPage() {
     setByKey(map);
 
     setGeneral({
-      displayName: asString(map['platform.displayName'], 'INSA Meal Management System'),
+      displayName: asString(map['platform.displayName'], 'IMMS Camp Management'),
       name: asString(map['platform.name'], 'IMMS'),
     });
 
@@ -439,7 +439,7 @@ export default function SettingsPage() {
               label="Logo URL"
               value={branding.logoUrl}
               onChange={(e) => setBranding((b) => ({ ...b, logoUrl: e.target.value }))}
-              placeholder="Leave empty to use bundled INSA logo"
+              placeholder="Leave empty to use bundled IMMS logo"
             />
             <div className="settings-logo-preview">
               <span className="muted">Preview</span>

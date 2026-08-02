@@ -27,9 +27,9 @@ export function ActivityReportFormShell({
     <div className="art-form">
       <header className="art-form-masthead">
         <div className="art-form-brand">
-          <BrandLogo variant="mark" size={36} className="art-doc-logo" alt="INSA" />
+          <BrandLogo variant="mark" size={36} className="art-doc-logo" alt="IMMS" />
           <div>
-            <p className="art-doc-org">INSA · Activity template</p>
+            <p className="art-doc-org">IMMS · Activity template</p>
             <p className="art-doc-kind">
               {mode === 'create' ? 'New campus day report' : 'Edit report draft'}
             </p>

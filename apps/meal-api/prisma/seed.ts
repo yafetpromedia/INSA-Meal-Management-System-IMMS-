@@ -465,9 +465,9 @@ async function main() {
     create: {
       scopeKey: PLATFORM,
       key: 'platform.displayName',
-      value: 'INSA Meal Management System',
+      value: 'IMMS Camp Management',
     },
-    update: { value: 'INSA Meal Management System' },
+    update: { value: 'IMMS Camp Management' },
   });
 
   for (const setting of [

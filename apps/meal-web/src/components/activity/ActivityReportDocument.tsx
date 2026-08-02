@@ -31,9 +31,9 @@ export function ActivityReportDocument({ report, children, className }: Props) {
     <article className={`art-doc ${className ?? ''}`} id="activity-report-document">
       <header className="art-doc-masthead">
         <div className="art-doc-brand">
-          <BrandLogo variant="mark" size={40} className="art-doc-logo" alt="INSA" />
+          <BrandLogo variant="mark" size={40} className="art-doc-logo" alt="IMMS" />
           <div>
-            <p className="art-doc-org">INSA · Meal Management</p>
+            <p className="art-doc-org">IMMS · Camp Management</p>
             <p className="art-doc-kind">Campus Activity Report</p>
           </div>
         </div>
@@ -168,7 +168,7 @@ export function downloadActivityReportHtml(report: ActivityReport) {
 <body>
   <div class="head">
     <div>
-      <div class="muted">INSA · Campus Activity Report</div>
+      <div class="muted">IMMS · Campus Activity Report</div>
       <strong>${esc(report.reportNumber)}</strong>
     </div>
     <div class="muted">${esc(activityStatusLabel(report.status))}</div>

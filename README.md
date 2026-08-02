@@ -1,4 +1,6 @@
-# INSA Meal Management System (IMMS)
+# IMMS Camp Management
+
+INSA multi-campus portal (IMMS) — meals, leave, gate, activity, and camp operations.
 
 Centralized multi-tenant **meal management** for training programs across multiple campuses.
 

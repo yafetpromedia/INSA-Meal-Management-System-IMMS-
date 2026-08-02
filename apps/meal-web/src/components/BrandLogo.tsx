@@ -27,12 +27,12 @@ function readBrandingLogoUrl(): string | null {
   }
 }
 
-/** INSA / IMMS brand image. Falls back to bundled assets under /public/brand. */
+/** IMMS brand image. Falls back to bundled assets under /public/brand. */
 export function BrandLogo({
   variant = 'mark',
   size = 36,
   className = '',
-  alt = 'INSA',
+  alt = 'IMMS',
 }: Props) {
   const [src, setSrc] = useState(variant === 'logo' ? DEFAULT_LOGO : DEFAULT_MARK);
 

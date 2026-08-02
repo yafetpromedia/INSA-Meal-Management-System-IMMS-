@@ -6,13 +6,16 @@ import { useRouter } from 'next/navigation';
 import {
   ChevronRight,
   FileSpreadsheet,
+  FileText,
   Images,
   Presentation,
+  Printer,
   Search,
   Tags,
   Timeline,
 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { downloadBlankActivityWordTemplate } from '@/components/activity/ActivityReportBlankTemplate';
 import { AddButton } from '@/components/ui/AddButton';
 import { Button } from '@/components/ui/Button';
 import { StatusChip } from '@/components/ui/Badge';
@@ -259,6 +262,24 @@ export default function ActivityReportsPage() {
               Categories
             </button>
           ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              downloadBlankActivityWordTemplate();
+              push({
+                kind: 'success',
+                title: 'Word template downloaded',
+                message: 'Open in Word to type, or print and write by hand',
+              });
+            }}
+          >
+            <FileText size={14} strokeWidth={1.75} aria-hidden />
+            Word template
+          </button>
+          <button type="button" onClick={() => router.push('/activity/template')}>
+            <Printer size={14} strokeWidth={1.75} aria-hidden />
+            Print blank
+          </button>
           {canExport ? (
             <button type="button" onClick={() => void onExport()}>
               <FileSpreadsheet size={14} strokeWidth={1.75} aria-hidden />
